@@ -28,17 +28,22 @@
  * larger mirror would be a larger thing to keep honest.
  *
  * ---------------------------------------------------------------------------
- * One deliberate difference from mc-sim's mirror
+ * WHY THE CLOCK PORT IS MIRRORED WHOLE, AGAINST THE "MINIMAL" RULE
  * ---------------------------------------------------------------------------
  *
- * `mc-sim/domain/kernel-vocabulary.ts` mirrors `ClockService` with only its
- * `monotonicSecs` field. Kernel's real `ClockService`
- * (`mc-kernel/domain/clock.ts:43-48`) has two, so a
- * `Layer.succeed(ClockPort, { monotonicSecs })` written against the one-field
- * mirror will NOT typecheck against the real service. That is precisely the
- * drift the deletion step above is supposed to be free of, so this mirror
- * carries both fields — and therefore `EpochMillis` too, even though nothing in
- * this repository reads a wall clock.
+ * `ClockPort` is a `Context.Tag`, and Effect resolves Tags by their TEXTUAL KEY
+ * — `'@nerima-games/mc-kernel/ClockPort'`. Every mirror of it in every
+ * repository therefore denotes the SAME service at runtime while being an
+ * unrelated nominal type to TypeScript. A mirror that dropped a field would not
+ * be "less of the vocabulary"; it would let a `Layer` built here satisfy a tag
+ * that promises more, and the missing field would read `undefined` in a
+ * repository that never saw this file.
+ *
+ * So this mirror carries kernel's `ClockService` verbatim — both fields, the
+ * object-shaped `fixedClock` / `FixedClockLayer`, and therefore `EpochMillis`
+ * too, even though nothing in this repository reads a wall clock.
+ * `test/kernel-mirror.test.ts` pins that shape against kernel's documented one,
+ * so the next divergence fails CI rather than a frame.
  */
 import { Brand, Context, Effect, Layer } from 'effect'
 
@@ -152,6 +157,12 @@ export const FixedClockLayer = (at: {
   readonly monotonicSecs: MonotonicTimeSecs
   readonly wallClockEpochMillis: EpochMillis
 }): Layer.Layer<ClockPort> => Layer.succeed(ClockPort, fixedClock(at))
+
+/** Read the wall clock. Only for human-facing or persisted values. */
+export const wallClockEpochMillis: Effect.Effect<EpochMillis, never, ClockPort> = Effect.flatMap(
+  ClockPort,
+  (clock) => clock.wallClockEpochMillis,
+)
 
 // ---------------------------------------------------------------------------
 // Camera pose — mirrors mc-kernel/domain/camera.ts

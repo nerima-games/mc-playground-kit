@@ -100,9 +100,16 @@ export type FlatWorldSpec = {
 export const DEFAULT_FLAT_WORLD: FlatWorldSpec = {
   worldId: makeWorldId('playground'),
   seed: 0,
-  // plan.md §3.7 records the reference implementation's SEA_LEVEL as 48. A flat
-  // preview world sits just above it, so that water-adjacent behaviour is
-  // reachable by digging one block down rather than by flying somewhere.
+  // 49 is NOT chosen for its relation to sea level. plan.md §3.7 states
+  // SEA_LEVEL = 48, and an earlier version of this comment justified 49 as
+  // "one block above it, so water is reachable by digging down". Both halves
+  // are wrong: the reference's SEA_LEVEL is 63 (<reference-impl>
+  // /packages/core/domain/constants.ts:17), which puts 49 fourteen blocks
+  // BELOW sea level, and a flat preview world generates no water at all.
+  //
+  // It survives as an arbitrary-but-stable ground plane. Previews only need a
+  // surface to stand on. Revisit when a preview needs real terrain, and take
+  // the level from mc-worldgen rather than restating a constant here.
   surfaceY: 49,
   radiusChunks: 1,
 }

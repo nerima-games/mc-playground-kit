@@ -14,7 +14,7 @@ kit の最小プレビューは「**kit がプレビューを起動できるこ�
 
 | 検証 | 何を保証するか | 状態 |
 | --- | --- | --- |
-| Node 決定論テスト | 順序・後始末・再入可能性・バジェットの算術が正しいこと。CI で高速に回る | **実装済**（`test/` 4 ファイル / 91 テスト） |
+| Node 決定論テスト | 順序・後始末・再入可能性・バジェットの算術が正しいこと。CI で高速に回る | **実装済**（`test/` 5 ファイル / 100 テスト） |
 | 最小 E2E（起動→操作→スクリーンショット） | **ブラウザで実際に立ち上がって操作できること**。テストが見ない部分 | **未実装** |
 
 plan.md §3.10 の検証要件は後者である。前者は plan.md が明示していないが、
@@ -76,13 +76,14 @@ plan.md §3.10 の「起動→操作→スクリーンショット」を、DN-07
 | `retries` | **0** で始める | 参照実装は 1。kit の E2E がリトライを必要とするなら、それはハーネスの不安定さの証拠であって隠すべきではない |
 
 `retries: 0` は参照実装からの意図的な逸脱である。参照実装のリトライは
-「64 本の重い E2E を 2 worker で回す」ための実務的な妥協だが、
+「70 本の重い E2E を 2 worker で回す」ための実務的な妥協だが
+（plan.md の公称は 64 本。実測は 70 本 / 23 ファイル。[porting.md](./porting.md) §3.6）、
 kit の E2E は数本しかなく、しかも**安定性そのものを検証している**。
 フレーキーなら直す対象はテストではなくハーネスである。
 
 ## 3. 現在のテスト
 
-`vitest run`。**4 ファイル / 91 テスト**、実行 1 秒未満。
+`vitest run`。**5 ファイル / 100 テスト**、実行 1 秒未満。
 
 | ファイル | テスト数 | 対応する DN |
 | --- | ---: | --- |
@@ -90,9 +91,41 @@ kit の E2E は数本しかなく、しかも**安定性そのものを検証し
 | `test/boot-phase.test.ts` | 20 | **DN-02**（1 秒バジェット）/ DN-09 |
 | `test/playground.test.ts` | 20 | **DN-03**（再入可能）/ **DN-04**（teardown 逆順）/ DN-05 / DN-06 / DN-08 |
 | `test/launch-options.test.ts` | 19 | DN-02 / **DN-05**（stage 順序の検査） |
+| `test/kernel-mirror.test.ts` | 9 | `domain/kernel-vocabulary.ts` が mc-kernel と同形であること（§3.1） |
 
 `check-dependency-whitelist.test.ts` が最大なのは偶然ではない。
 **本リポジトリの憲法（devDependency 専用）を守るのがこのゲートだから**である。
+
+### 3.1 `test/kernel-mirror.test.ts` が守っているもの
+
+`domain/kernel-vocabulary.ts` は「削除して import を publish 済みパッケージに向け直せば型検査が通る」と
+約束している。**その約束は何にも強制されておらず、ロスターの他所では既に破られていた。**
+
+`ClockPort` は `Context.Tag` であり、Effect は Tag を**その文字列キー**
+（`'@nerima-games/mc-kernel/ClockPort'`）で解決する。したがって全リポジトリのミラーは
+実行時には同じ 1 つのサービスでありながら、TypeScript にとっては無関係な名前的別型である。
+mc-sim のミラーは `ClockService` を 1 フィールドで持っており（kernel と本リポジトリは 2 フィールド）、
+本リポジトリは mc-sim に依存するので両者は同じバンドルに同居する——
+**狭い側の `Layer` が広い側の Tag を満たし、`wallClockEpochMillis` が `undefined` になる。**
+`tsc` は最後まで何も言わない。
+
+同じ根を持つ 2 件目がブランドである。`Brand.Brand<'DeltaTimeSecs'>` も文字列でキーされるので、
+mc-physics が `[0.001, 0.05]` に refine していた `DeltaTimeSecs` と
+kernel の「有限かつ非負」の `DeltaTimeSecs` は、**検証の中身が違うのに TypeScript には同じ型**だった。
+
+このファイルはその両方を assert する:
+
+| it | 何を固定するか |
+| --- | --- |
+| `uses kernel’s tag key verbatim, which is why the shape has to match` | Tag キーを文字列リテラルで固定。ハザードの根そのもの |
+| `REGRESSION: the mirrored ClockService is not NARROWER than kernel’s` | 狭めたら落ちる |
+| `REGRESSION: the mirrored ClockService is not WIDER than kernel’s` | 広げても落ちる。**両方向**であることが要点 |
+| `REGRESSION: FixedClockLayer takes kernel’s object argument, not a bare reading` | シグネチャの drift |
+| `mirrors kernel’s FrameServices alias rather than narrowing it to never` | `FrameServices` は kernel と同じく `ClockPort` の別名 |
+| `DeltaTimeSecs is finite and non-negative — kernel’s refinement, not the clamp` | クランプは量の性質ではなくフレームループの関心事 |
+| `MonotonicTimeSecs is finite and non-negative` / `EpochMillis is a safe integer, so a fractional millisecond cannot be persisted` / `StageId and WorldId reject blank strings, as kernel’s identifiers do` | 残りのブランド述語 |
+
+同種のテストが mc-sim と mc-render にもある。
 
 ## 4. テストの書き方（本リポジトリの規約）
 

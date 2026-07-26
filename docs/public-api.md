@@ -156,7 +156,7 @@ export type FlatWorldSpec = {
 
 - 参照実装の `SEA_LEVEL` は **63** である(`<reference-impl>/packages/core/domain/constants.ts:17`)。
   48 という値は plan.md §3.7 の誤りで、mc-worldgen の
-  [public-api.md](https://github.com/nerima-games/mc-worldgen) §1 が
+  [public-api.md](https://github.com/nerima-games/mc-worldgen/blob/main/docs/public-api.md) §1 が
   `SEA_LEVEL = 63` / `LAKE_LEVEL = SEA_LEVEL` として実測で訂正している。
 - したがって 49 は海面の「すぐ上」ではなく、海面より **14 ブロック下**である。
   「1 ブロック掘れば水に届く」という記述は 63 のもとでは端的に偽である。

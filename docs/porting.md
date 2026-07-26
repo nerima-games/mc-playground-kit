@@ -37,11 +37,42 @@ $ find <dir> -name '*.ts' -not -name '*.test.ts' -not -name '*.spec.ts' | xargs 
 | --- | --- |
 | `session-bootstrap-*`（16 ファイル / 1,051 LOC） | **出荷セッションであってプレビューではない。** §2.1 で違いを述べる |
 | `session-lifecycle-*` / `session-control` / `session-loading-gates-*`（10 ファイル / 776 LOC） | セッションライフサイクル（タイトル⇄ゲーム）は mc-compose（plan.md §3.15） |
-| `packages/app/application/main/layers/`（66 ファイル / 918 LOC） | Layer 合成は mc-compose が唯一所有（plan.md §2.3-3 / §3.15）。plan.md §3.15 の「配線(918 LOC相当)」はこの実測値と一致する |
+| `packages/app/application/main/layers/`（66 ファイル / 918 LOC） | Layer 合成は mc-compose が唯一所有（plan.md §2.3-3 / §3.15）。plan.md §3.15 の「配線(918 LOC相当)」は**この 918 と一致する** —— ただし一致するのは `layers/` に限った読み方のときだけである。§1.1 |
 | `qa-api-*`（14 ファイル） | QA/デバッグ API は mc-compose（plan.md §3.15） |
 | `packages/presentation/input/`（681 LOC） | **実行時入力は mc-render が所有**（plan.md §2.3-2）。§3.3 で詳述 |
-| `e2e/` のテスト本体（23 ファイル / 2,875 LOC） | 参照実装の 64 本の E2E は mc-compose が移植する（plan.md §3.15） |
+| `e2e/` のテスト本体（23 ファイル / 2,875 LOC） | 参照実装の E2E は mc-compose が移植する（plan.md §3.15）。plan.md の「64 本」は公称値で、実測は **70 本**（23 ファイル）。§3.6 |
 | `e2e/helpers/` `e2e/fixtures/`（6 ファイル / 558 LOC） | ここだけは**部分的に参考にする**。§3.4 |
+
+### 1.1 「918 LOC相当」の読み方 —— mc-compose の判定と食い違わせないこと
+
+本表の 918 は再現できる実測値である
+（`packages/app/application/main/layers/` の 66 ファイルがちょうど 918 LOC）。
+その意味で「plan.md §3.15 の 918 はこの実測値と一致する」は正しい。
+
+しかし mc-compose の
+[porting.md](https://github.com/nerima-games/mc-compose/blob/main/docs/porting.md) §0.1 は、
+同じ 918 を「**22 倍の過小評価**」と判定している。**両方とも正しい。読み方が違うだけである。**
+
+| plan.md §3.15 の「`packages/app` の配線(918 LOC相当)」の読み方 | 実測 | 判定 |
+| --- | ---: | --- |
+| 「Layer 合成コードは何行か」（`main/layers/`、66 ファイル） | **918** | plan.md は**正しい** |
+| 「`packages/app/application/` から出ていく総量は何行か」 | **20,737** | plan.md は **22 倍の過小評価** |
+
+本リポジトリが 918 を使うのは前者の意味 —— **「移植しないもの」の輪郭を描くため**である。
+mc-compose が 20,737 を使うのは後者の意味 —— **自分が引き取る総量を見積もるため**である。
+どちらの数字も同じ 1 本のコマンドで再現できる:
+
+```console
+$ cd <reference-impl>
+$ find packages/app/application/main/layers -name '*.ts' -not -name '*.test.ts' | xargs wc -l | tail -1
+   918 total
+$ find packages/app/application -name '*.ts' -not -name '*.test.ts' | xargs wc -l | tail -1
+ 20737 total
+```
+
+**plan.md が誤っているのは数値ではなくスコープの表示である。**
+「`packages/app` の配線」と書きながら測っているのは `main/layers/` だけで、
+その差 19,819 LOC が本計画そのものになった（mc-compose の porting.md §0.1）。
 
 ## 2. 最も近縁なコード（実測）
 
@@ -247,8 +278,12 @@ Node の決定論テストで検証しているのは、同じ方針の別の現
 **70/71 と 66 の差は 4〜5 本。** 内訳の候補は
 `e2e/gameplay/perf-target.e2e.ts:64-67` と `e2e/gameplay/perf-stage-baseline.e2e.ts:138-141` の
 `test.skip`（= 2 skipped の正体）、および grep がコメント/文字列を拾った分。
-**mc-compose 側で再計数すること。** mc-sim の `docs/porting.md` §6 も同じ差分に触れており、
-そちらは「23 ファイル / 70 箇所」まで数えて mc-compose に投げている。
+**この差分は mc-compose 側で決着済みである** ——
+[porting.md](https://github.com/nerima-games/mc-compose/blob/main/docs/porting.md) §0 が
+`grep -rhcE "(^|[^.a-zA-Z])test\(" e2e --include='*.e2e.ts'` で **70** を確定させ、
+「plan.md の 64 本と食い違う（+6）」と記録している。
+**移植計画に使う数字は 70 本 / 23 ファイルである。** mc-sim の `docs/porting.md` §6 も同じ結論。
+上表に残した 66 や 71 は、その 70 がどう揺れうるかの記録であって、採用値ではない。
 
 参照実装の E2E 総量: **23 ファイル / 2,875 LOC**（`.e2e.ts` のみ）、
 ヘルパと fixture を含めて **3,469 LOC**。

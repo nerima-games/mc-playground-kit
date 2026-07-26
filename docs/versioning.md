@@ -178,12 +178,28 @@ mc-kernel が publish されたら:
 
 **これで型検査が通らなければ、ミラーが drift しており、その drift 自体がバグである。**
 
-本リポジトリのミラーは mc-sim のものと 1 点だけ意図的に違う。
-**`ClockService` を 2 フィールドで持っている**（`monotonicSecs` + `wallClockEpochMillis`）。
-kernel の実物（`mc-kernel/domain/clock.ts:43-48`）が 2 フィールドであり、
-1 フィールドのミラーに対して書いた `Layer.succeed(ClockPort, { monotonicSecs })` は
-実物に対して型検査を通らない。それは上の手順 3 が「機械的」であることの前提を壊す。
-本リポジトリは `wallClockEpochMillis` を 1 度も読まないが、それでもミラーしてある。
+### 6-1. `ClockService` は**丸ごと**ミラーする。ミラーが最小であってはならない唯一の箇所
+
+`ClockService` は 2 フィールドである（`monotonicSecs` + `wallClockEpochMillis`）。
+kernel の実物（`mc-kernel/domain/clock.ts:43-48`）が 2 フィールドだからで、
+**本リポジトリは `wallClockEpochMillis` を 1 度も読まないが、それでもミラーしてある。**
+
+理由は型検査だけではない。`ClockPort` は `Context.Tag` であり、
+Effect は Tag を**その文字列キー**（`'@nerima-games/mc-kernel/ClockPort'`）で解決する。
+全リポジトリのミラーが同じキーを使っているので、**それらは実行時には同じ 1 つのサービス**でありながら、
+TypeScript にとっては無関係な名前的別型である。したがって狭いミラーは「語彙が少ない」ではなく、
+
+- 1 フィールドのミラーに対して組んだ `Layer` が 2 フィールドの Tag を**満たしてしまい**、
+- 足りないフィールドは、そのミラーを見たことのないリポジトリで `undefined` として読まれる。
+
+**これは実際に起きていた。** mc-sim のミラーが 1 フィールドで、
+kernel と本リポジトリが 2 フィールドだった。本リポジトリは mc-sim に依存するので、
+両者は同じバンドルに同居する。`tsc` は最後まで何も言わない。
+
+現在は 3 つのミラーすべてが kernel と同形であり、
+`test/kernel-mirror.test.ts`（mc-sim / mc-render / 本リポジトリの 3 か所にある）が
+Tag キーの文字列とサービスの形を**両方向で**固定している——狭めても広げても CI が落ちる。
+`FixedClockLayer` がオブジェクト引数を取ることも同様に固定してある。
 
 なお `index.ts` はこのミラーを **re-export していない**。consumer が kit 経由で
 kernel の語彙を取ると真実の出所が 2 つになり、上記の削除が破壊的変更に化けるためである。
@@ -218,4 +234,4 @@ kernel の語彙を取ると真実の出所が 2 つになり、上記の削除�
 | `typescript` / `vitest` / `oxlint` | `^` 付き | ツールチェーンは揃えるが厳密ピンはしない |
 | `packageManager` | `pnpm@9.15.0` | 16 リポジトリで同一 |
 
-`engines.node` は `>=22.0.0`。devenv が `nodejs_22` を入れる。
+`engines.node` は `>=22.0.0`。`flake.nix` の devShell が `nodejs_22` を入れる。

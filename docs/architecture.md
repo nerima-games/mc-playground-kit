@@ -124,15 +124,23 @@ publish 後も Port のままにする理由は [design-notes.md](./design-notes
 
 ### 3.2 子（kit に依存するもの）— **実行時依存はゼロ**
 
-| リポジトリ | 依存の種類 | 何に使うか |
+| リポジトリ | 依存の種類（意図された最終形） | 何に使うか |
 | --- | --- | --- |
 | `mx-gameplay` | **devDependency のみ** | プレビュー 3 本（採掘場 / Mobアリーナ / 時間スライダー）の起動 |
 | `mx-redstone` | **devDependency のみ** | 回路盤プレビューの起動 |
 | その他 12 リポジトリ | 依存しない | — |
 
+> **現状**: この表は**意図された最終形**である。
+> **今日この kit を依存に持つリポジトリは 1 つも無い。**
+> 16 リポジトリのどの `package.json` にも `@nerima-games/*` は 1 つも宣言されていない
+> （どれもまだ publish されていないため。plan.md §6 Step 3 の bottom-up publish-then-pin）。
+> 表に挙げたプレビューもまだ 1 本も存在しない（`apps/` ディレクトリ自体がどのリポジトリにも無い）。
+> **にもかかわらずこの表は今日から意味を持つ。** `scripts/check-dependency-whitelist.ts` の
+> roster がこの形を宣言しており、実装が入る前から違反を落とせるからである（§4.2）。
+
 plan.md §2.1 のグラフでは点線 2 本。`mc-worldgen` / `mc-sim` / `mc-render` の内蔵プレビューも
 実際には kit を使うことになるが、それは各リポジトリの `apps/preview-*/` から
-devDependency として参照する形であり（mc-sim の [testing.md](https://github.com/nerima-games/mc-sim) §2.1 が
+devDependency として参照する形であり（mc-sim の [testing.md](https://github.com/nerima-games/mc-sim/blob/main/docs/testing.md) §2.1 が
 同じ整理をしている）、やはり実行時依存にはならない。
 
 ### 3.3 推移閉包は禁止

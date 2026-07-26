@@ -170,11 +170,17 @@ mc-sim の関数で 1 回クランプし、その結果を渡す。
 
 ### 子（kit に依存する）— **実行時はゼロ**
 
-| リポジトリ | 依存の種類 | 何を使うか | kit 側で壊してはいけないもの |
+| リポジトリ | 依存の種類（意図された最終形） | 何を使うか | kit 側で壊してはいけないもの |
 | --- | --- | --- | --- |
 | `mx-gameplay` | **devDependency のみ** | プレビュー 3 本の起動 | `launchPlayground()` が無引数で完結すること |
 | `mx-redstone` | **devDependency のみ** | 回路盤プレビューの起動 | 同上 + `modules` による stage 注入 |
 | `mc-worldgen` / `mc-sim` / `mc-render` の `apps/preview-*/` | **devDependency のみ** | 各内蔵プレビューの起動 | `launch` の再入可能性 |
+
+> **現状**: この表は**意図された最終形**である。
+> **今日この kit を依存に持つリポジトリは 1 つも無い**（どの `package.json` にも
+> `@nerima-games/*` の宣言は無く、`apps/preview-*/` もまだどこにも存在しない）。
+> publish が始まっていないためで、plan.md §6 Step 3 の bottom-up publish-then-pin に沿う。
+> 「kit 側で壊してはいけないもの」の列は、その日が来る前に守るべき制約として今日から効く。
 
 **この表に「実行時依存」の行が 1 つもないこと自体が、本リポジトリの最重要の不変条件である。**
 `test/check-dependency-whitelist.test.ts` の
