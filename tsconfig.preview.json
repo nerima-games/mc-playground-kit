@@ -1,0 +1,21 @@
+{
+  // The dev preview under apps/preview-harness.
+  //
+  // A SEPARATE project on purpose. tsconfig.build.json proves that the shipped
+  // harness is platform-free — it inherits `types: []` and a `lib` without
+  // "DOM", so a Node global or a browser type leaking into `domain/` or
+  // `application/` fails the build. That proof is what lets the four Ports be
+  // satisfied from a browser, a worker, a test or a terminal preview alike,
+  // and it would be destroyed by adding `apps/**` to that project's `include`.
+  //
+  // NOTE what this file does NOT do: it does not add "DOM" to `lib`, and it
+  // does not add @playwright/test. The screenshot half of docs/testing.md's E2E
+  // needs both, plus four real Port Layers that cannot exist until the parents
+  // are published. See apps/preview-harness/main.ts.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": ["apps/**/*.ts", "index.ts", "domain/**/*.ts", "application/**/*.ts"],
+  "exclude": ["node_modules", "coverage", "dist"]
+}

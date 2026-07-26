@@ -15,7 +15,8 @@ kit の最小プレビューは「**kit がプレビューを起動できるこ�
 | 検証 | 何を保証するか | 状態 |
 | --- | --- | --- |
 | Node 決定論テスト | 順序・後始末・再入可能性・バジェットの算術が正しいこと。CI で高速に回る | **実装済**（`test/` 5 ファイル / 100 テスト） |
-| 最小 E2E（起動→操作→スクリーンショット） | **ブラウザで実際に立ち上がって操作できること**。テストが見ない部分 | **未実装** |
+| 内蔵プレビュー（起動 → 操作） | **人間が起動を見て、フェーズ別にコストを読めること** | **実装済**（[`apps/preview-harness/`](../apps/preview-harness/README.md)） |
+| ── うちスクリーンショット | **ブラウザで実際に立ち上がって絵が出ること** | **未実装。§2.1 を見ること** |
 
 plan.md §3.10 の検証要件は後者である。前者は plan.md が明示していないが、
 [design-notes.md](./design-notes.md) の各 DN を回帰テストとして焼き込むために不可欠であり、
@@ -27,17 +28,59 @@ plan.md §3.10 の検証要件は後者である。前者は plan.md が明示�
 > 各リポジトリの完了条件: ユニット/シナリオテスト green + **内蔵プレビューが操作可能**
 
 kit の場合これは「テスト green **かつ** 最小 E2E（起動→操作→スクリーンショット）が動く」である。
-**両方**が条件で、現在は前者だけを満たしている。
 
-### 2.1 E2E がまだ無い
+内蔵プレビューは [`apps/preview-harness/`](../apps/preview-harness/README.md) にあり、
+`pnpm preview` で起動する。`pnpm verify` には入らないが、`pnpm typecheck`
+（`tsconfig.preview.json`）と `pnpm lint` と `pnpm check:deps` の対象には入っている。
+**「起動 → 操作」は満たした。「スクリーンショット」はまだである。**
 
-**このスケルトンに E2E も Playwright も存在しない。** `package.json` に
-`@playwright/test` は入っておらず、`playwright.config.ts` も `e2e/` も無い。
+### 2.1 スクリーンショットの半分が無い理由 —— 4 つ、正確に
 
-依存順の都合である。plan.md §6 Step 2 の構築順は
-`worldgen → sim → render → kit → gameplay / redstone` であり、
-kit の E2E は 4 つの Port すべてに**実装**を要する。現在はどれも未公開なので、
-E2E は「fake の Port をブラウザで動かす」ことしかできず、それは何も検証しない。
+1. **本物の Port Layer が無い。** `application/preview-ports.ts` は 4 つの
+   `Context.Tag` とサービス型だけで、`Layer.succeed` が**意図的に 1 つも無い**。
+   本物には mc-worldgen / mc-sim / mc-render の publish と pin が要る
+   （plan.md §6 Step 3）。何も publish されていない。
+2. **ブラウザが要る。** スクリーンショットはピクセルの写真であり、
+   mc-render は THREE.js も `lib.DOM` も出荷していない。
+3. **`@playwright/test` が組織のどのリポジトリの依存にも入っていない。**
+   `playwright.config.ts` も `e2e/` も無い。足すのは package.json の 1 行ではなく、
+   CI 実行時間についての決定である。
+4. **ベースライン方針が無い。**「同じ絵とは何か」の合意が無いスクリーンショットテストは、
+   フォント更新で落ちるテストである。plan.md §3.10 は Playwright が SwiftShader 上で
+   動くと記録しているので、ベースラインを開発機から取ることもできない。
+
+### 2.2 それでも今日測れるもの ——「1 秒で確実に起動する」
+
+plan.md §3.10 は kit を「**最も丁寧に作る**」部分と呼ぶ。理由は他の全リポジトリの
+プレビュー起動がここに乗るからで、成り立たねばならない性質は
+**約 1 秒で、確実に起動する**ことである。
+
+**それは今日測れる。しかも Port が注入されているからこそ測れる。**
+`apps/preview-harness/` は 4 つの fake Port と 1 つの `ClockPort` をプログラムし、
+起動し、操作し、破棄し、再起動して、ブートバジェットを**フェーズ別に**出す。
+
+**壁時計で測ったブートバジェットはベンチマークである。** 負荷のかかった CI で落ちる
+ベンチマークは削除される。このアプリが出すミリ秒はすべて fixture がプログラムした
+`ClockPort` 由来なので、ノート PC でも CI でも同じ数字になる。
+
+`--stats` は数値レポートで、**3 件の発見**に file:line と再現コマンドを付けて出す。
+
+| # | 内容 | 場所 |
+| --- | --- | --- |
+| KIT-1 | **世代交代した handle の `stop()` が、生きているプレビューの Port を落とす。** `isRunning` も `current` も `framesRendered` も健全なまま | `application/playground.ts:389-393` |
+| KIT-2 | 1 回の launch でモジュールの `frameStages` が 2 回評価される。2 回目は `phase()` の外で、`stageOrderWarnings` はそちらから導かれる | `application/playground.ts:344`, `:352` |
+| KIT-3 | `elapsedMillis` が非有限入力で throw する。doc は負値の話しかしていない | `domain/boot-phase.ts:99-100` |
+
+KIT-1 は本書 §8 の「まだ書いていないテスト」の一部でもある
+（`test/playground.test.ts:485` は**正しいことについてのテスト**だが、
+ガードが既に守っている 2 つのフィールドしか見ていない）。
+全件の詳細は [`apps/preview-harness/README.md`](../apps/preview-harness/README.md)。
+
+### 2.3 本物の Layer ができたとき
+
+`apps/preview-harness/harness.ts` の fixture が、4 つの Layer が満たすべき形そのものである。
+E2E はそこに差し込む。現在のプレビューはその**代わりではなく**、
+それ無しで確かめられる半分である。
 
 したがって kit も mc-sim と同じ 2 段階になる。
 

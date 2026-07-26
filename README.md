@@ -184,9 +184,10 @@ Nix を使わない場合は Node.js 22 以上と pnpm 9.15.0（`corepack` 推�
 
 | コマンド | 内容 |
 | --- | --- |
-| `pnpm typecheck` | `tsconfig.build.json` と `tsconfig.test.json` の両方を型検査 |
+| `pnpm typecheck` | `tsconfig.build.json` / `tsconfig.test.json` / `tsconfig.preview.json` の 3 プロジェクトを型検査 |
 | `pnpm lint` | oxlint（このリポジトリ唯一の lint / format 設定。prettier も biome も .editorconfig も置かない）。**`--deny-warnings` 付きで走る**ため、`warn` のルールもビルドを落とす（`oxlint.json` は 5 カテゴリすべてと個別 67 ルールが `warn`、`error` は 4 つだけ。このフラグが無かった頃は実質その 4 つしかゲートになっていなかった） |
 | `pnpm lint:fix` | oxlint の自動修正 |
+| `pnpm preview` | 内蔵プレビュー（ハーネスが自分自身をプレビューする）。**`pnpm verify` には入らない**。[`apps/preview-harness/README.md`](./apps/preview-harness/README.md) |
 | `pnpm test` | vitest（`@effect/vitest` の `it.effect` が主 API、`environment: 'node'`） |
 | `pnpm test:watch` | vitest watch |
 | `pnpm test:coverage` | カバレッジ計測（閾値は未設定。後述） |
