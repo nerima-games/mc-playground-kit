@@ -1,0 +1,68 @@
+{
+  // Shared compiler options for every tsconfig in this repository.
+  // Strictness policy: `strict: true` PLUS every additional strictness flag
+  // spelled out explicitly, so that a future TypeScript release changing a
+  // default cannot silently weaken this repository.
+  "compilerOptions": {
+    "target": "ES2024",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    // ES2024 only, deliberately — for now.
+    //
+    // The finished harness mounts a canvas and therefore needs `"DOM"`. It is
+    // not listed yet because the current source is pure: launch options,
+    // defaults, and a boot-phase budget, all of which are checked in Node.
+    // Keeping the lib narrow until the first DOM line lands means the boot-order
+    // logic stays testable headlessly, which is exactly the property Playwright
+    // (SwiftShader, no pointer lock) cannot give us. See docs/testing.md.
+    "lib": ["ES2024"],
+    "types": [],
+
+    "allowJs": false,
+    "checkJs": false,
+
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "removeComments": false,
+
+    "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "strictFunctionTypes": true,
+    "strictBindCallApply": true,
+    "strictPropertyInitialization": true,
+    "noImplicitThis": true,
+    "alwaysStrict": true,
+    "useUnknownInCatchVariables": true,
+    "exactOptionalPropertyTypes": true,
+    "noUncheckedIndexedAccess": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "allowUnreachableCode": false,
+    "allowUnusedLabels": false,
+
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "resolvePackageJsonExports": true,
+    "resolvePackageJsonImports": true,
+    "skipLibCheck": true,
+
+    "newLine": "lf",
+    "stripInternal": true,
+
+    // No build step yet (see README 現状). Every tsconfig here is check-only;
+    // `package.json#exports` points at TypeScript source. The emitting
+    // build/publish pipeline is added when this repo reaches completion.
+    "noEmit": true,
+
+    "baseUrl": "."
+  }
+}

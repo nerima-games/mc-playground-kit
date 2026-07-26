@@ -1,0 +1,258 @@
+# テスト / 検証
+
+## 1. plan.md が要求する検証（§3.10）
+
+> **検証**: 自身の最小E2E（起動→操作→スクリーンショット）
+
+15 リポジトリの中で、検証要件が**これ 1 行だけ**なのはここだけである。
+他は「ユニットテスト + 内蔵プレビュー」の 2 本立てだが、kit は違う。
+
+理由は、**kit にとってプレビューと検証は同じものだから**である。
+mc-worldgen の地形プレビューは「mc-worldgen が正しいこと」を人間に見せる装置だが、
+kit の最小プレビューは「**kit がプレビューを起動できること**」の証明そのものである。
+ハーネスが自分自身をハーネスとして使う。
+
+| 検証 | 何を保証するか | 状態 |
+| --- | --- | --- |
+| Node 決定論テスト | 順序・後始末・再入可能性・バジェットの算術が正しいこと。CI で高速に回る | **実装済**（`test/` 4 ファイル / 91 テスト） |
+| 最小 E2E（起動→操作→スクリーンショット） | **ブラウザで実際に立ち上がって操作できること**。テストが見ない部分 | **未実装** |
+
+plan.md §3.10 の検証要件は後者である。前者は plan.md が明示していないが、
+[design-notes.md](./design-notes.md) の各 DN を回帰テストとして焼き込むために不可欠であり、
+かつ DN-07 の「E2E 環境は SwiftShader でポインタロックが無い」という制約下では
+**E2E で検証できないことが多すぎる**ため、実質的に必須である。
+
+## 2. 完了条件（plan.md §6 Step 2）
+
+> 各リポジトリの完了条件: ユニット/シナリオテスト green + **内蔵プレビューが操作可能**
+
+kit の場合これは「テスト green **かつ** 最小 E2E（起動→操作→スクリーンショット）が動く」である。
+**両方**が条件で、現在は前者だけを満たしている。
+
+### 2.1 E2E がまだ無い
+
+**このスケルトンに E2E も Playwright も存在しない。** `package.json` に
+`@playwright/test` は入っておらず、`playwright.config.ts` も `e2e/` も無い。
+
+依存順の都合である。plan.md §6 Step 2 の構築順は
+`worldgen → sim → render → kit → gameplay / redstone` であり、
+kit の E2E は 4 つの Port すべてに**実装**を要する。現在はどれも未公開なので、
+E2E は「fake の Port をブラウザで動かす」ことしかできず、それは何も検証しない。
+
+したがって kit も mc-sim と同じ 2 段階になる。
+
+1. **いま**: Node の決定論テストで順序・後始末・再入可能性・バジェット算術を固定する（達成済み）
+2. **mc-worldgen / mc-sim / mc-render が揃ってから**: 実 Layer を注入した最小 E2E を書く（完了条件）
+
+この順序は避けられない。
+
+### 2.2 最小 E2E に書くこと（設計済み・未実装）
+
+plan.md §3.10 の「起動→操作→スクリーンショット」を、DN-07 の環境制約の下で実現する。
+
+| 段階 | やること | DN-07 由来の制約 |
+| --- | --- | --- |
+| 起動 | `launchPlayground()` を**無引数で**呼ぶ | 既定値だけで立つことが §2.1 の契約 |
+| 操作 | mc-render の**仮想入力**で前進とカメラ回転を与える | **ポインタロックはヘッドレスで使えない**（`e2e/gameplay/player-controls.e2e.ts:208`）。`setVirtualKey` / `addVirtualLookDelta` を使う |
+| スクリーンショット | 1 枚撮って、前回と比較する | ワールドのシードが固定なので比較可能（`DEFAULT_FLAT_WORLD.seed = 0`） |
+| relaunch | もう一度 `launchPlayground()` して、同じスクリーンショットが撮れる | **ここが kit 固有**。DN-03 の relaunch 保証をブラウザで確かめる唯一の場所 |
+
+**書かないこと**（すべて DN-07 に理由）:
+
+| 書かないもの | 理由 |
+| --- | --- |
+| FPS のアサーション | SwiftShader 下の FPS は環境較正が要る（`e2e/gameplay/fps-threshold.e2e.ts:5-8` は CI 10 / local 12）。フレームレートは mc-render / mc-compose の関心事 |
+| 起動バジェット（1 秒）の検証 | **SwiftShader 下の 1 秒は実機の 1 秒ではない。** バジェットは Node の純粋関数テストと実機の手動計測で見る |
+| ポインタロックを要求する操作 | ヘッドレスで不可 |
+| ゲームルールの検証 | kit はルールを持たない（[responsibility.md](./responsibility.md) §3） |
+
+**Playwright の設定**（導入時に参照実装から移植する値）:
+
+| 設定 | 値 | 出典 |
+| --- | --- | --- |
+| launch args | `--use-gl=angle` / `--use-angle=swiftshader` / `--enable-unsafe-swiftshader` ほか | `playwright.config.ts:31-42` |
+| `PLAYWRIGHT_USE_SWIFTSHADER` | `'1'` | `playwright.config.ts:5` |
+| `workers` | **1**（参照実装は CI 1 / local 2） | 並列ゲームインスタンスがレンダーループを飢えさせ合成キー入力を落とす（`playwright.config.ts:11-15`）。ハーネスの検証にそのノイズを混ぜない |
+| `retries` | **0** で始める | 参照実装は 1。kit の E2E がリトライを必要とするなら、それはハーネスの不安定さの証拠であって隠すべきではない |
+
+`retries: 0` は参照実装からの意図的な逸脱である。参照実装のリトライは
+「64 本の重い E2E を 2 worker で回す」ための実務的な妥協だが、
+kit の E2E は数本しかなく、しかも**安定性そのものを検証している**。
+フレーキーなら直す対象はテストではなくハーネスである。
+
+## 3. 現在のテスト
+
+`vitest run`。**4 ファイル / 91 テスト**、実行 1 秒未満。
+
+| ファイル | テスト数 | 対応する DN |
+| --- | ---: | --- |
+| `test/check-dependency-whitelist.test.ts` | 32 | **DN-01**（devDependency 専用）/ DN-09 |
+| `test/boot-phase.test.ts` | 20 | **DN-02**（1 秒バジェット）/ DN-09 |
+| `test/playground.test.ts` | 20 | **DN-03**（再入可能）/ **DN-04**（teardown 逆順）/ DN-05 / DN-06 / DN-08 |
+| `test/launch-options.test.ts` | 19 | DN-02 / **DN-05**（stage 順序の検査） |
+
+`check-dependency-whitelist.test.ts` が最大なのは偶然ではない。
+**本リポジトリの憲法（devDependency 専用）を守るのがこのゲートだから**である。
+
+## 4. テストの書き方（本リポジトリの規約）
+
+### 4.1 `@effect/vitest` の `it.effect`
+
+主 API は `it.effect`。純粋な assertion だけの場合も `Effect.sync(() => { ... })` で包む
+（テストの実行モデルを 1 つに保つため）。mc-sim / mc-kernel と同じ。
+
+```typescript
+import { describe, expect, it } from '@effect/vitest'
+import { Effect } from 'effect'
+
+it.effect('name', () => Effect.sync(() => { expect(...).toBe(...) }))
+it.effect('name', () => Effect.gen(function* () { ... }).pipe(Effect.provide(SomeLayer)))
+```
+
+`it.effect` + `Effect.forkDaemon` + `Deferred.await` は**動く**
+（`test/playground.test.ts` がそうしている）。mc-sim の `docs/testing.md` §4.3 が記録している
+mx-ui の注意（DOM イベントフローだとデッドロックする）は、待ち合わせが DOM を跨がない限り関係ない。
+**kit のコードは DOM に触れない**（`tsconfig.base.json` の `lib: ["ES2024"]`）ので、
+跨ぎようがない。跨ぐ必要が出たら、それは責務境界を越えた合図である。
+
+### 4.2 `environment: 'node'` 固定 — ここが本リポジトリの主張
+
+`vitest.config.ts` は `environment: 'node'`。**ブラウザも DOM も WebGL も Playwright も無い。**
+
+これは制約ではなく設計である。DN-07 が記録するとおり、E2E 環境は
+SwiftShader・ポインタロック不可・並列時のキー入力落ちという条件下にあり、
+**そこで検証されたことは遅く、フレーキーで、ブラウザが作れる構成でしか確かめられない**。
+
+起動順序・後始末順序・再入可能性・バジェットの算術は、まさにそこで検証してはいけないものである。
+だから 4 つの重い surface を Port にした（`application/preview-ports.ts`）。
+
+```typescript
+// test/playground.test.ts の fake clock — 壁時計を一切読まない
+const nowSecs = yield* Ref.make(0)
+const spend = (secs: number) => Ref.update(nowSecs, (value) => value + secs)
+Layer.succeed(ClockPort, {
+  monotonicSecs: Ref.get(nowSecs).pipe(Effect.map(MonotonicTimeSecs)),
+  wallClockEpochMillis: Effect.succeed(EpochMillis(0)),
+})
+```
+
+Port が「作業した」ぶんだけ時計が進む。**バジェットのテストが CI マシンの負荷で落ちない。**
+壁時計を読んでいたら、`REGRESSION: a slow world phase is reported, not absorbed` は
+フレーキーテストになっていた。
+
+### 4.3 回帰テストは失敗の名前を付ける
+
+DN-xx に対応するテストは `REGRESSION: ...` で始め、**機能名ではなく失敗の名前**を付ける。
+
+```
+REGRESSION: a second launch tears the first down — the second-world-load bug
+REGRESSION: no fiber from the first launch survives to see a second launch frame
+REGRESSION: a late stop() on a superseded handle does not kill the live preview
+REGRESSION: input is detached FIRST, before the renderer it fires into
+REGRESSION: the whole budget is smaller than the reference session could ever be
+REGRESSION: a missing phase is NOT "under budget" — it is unjudged
+```
+
+削除しようとした人に、そのテストが何を守っているかがその場で分かる必要がある。
+
+`KNOWN LIMIT:` 接頭辞も 1 つある（`test/check-dependency-whitelist.test.ts`）。
+**塞げていない穴を、塞げているふりをせずにテストで記録する**ための印である
+（[design-notes.md](./design-notes.md) DN-01 §1.4）。
+
+### 4.4 定数は算術ではなくリテラルで assert する
+
+```typescript
+expect(BOOT_BUDGET_MILLIS).toBe(1000)                    // ○
+expect(sum).toBe(1000)                                   // ○
+expect(DEFAULT_SPAWN_KIT.feetPosition.y).toBe(50)        // ○
+expect(sum).toBe(BOOT_BUDGET_MILLIS)                     // × 両辺が同じ定数を読む
+```
+
+両辺が同じ定数を読むテストは、定数を「整理」した瞬間に緑のまま壊れる。
+バジェットを 5 秒に上げる変更を検知するのがこのファイルの唯一の存在理由なので、
+ここを間違えると何も守っていない。
+
+例外: `expect(DEFAULT_SPAWN_KIT.feetPosition.y).toBe(DEFAULT_FLAT_WORLD.surfaceY + 1)` は
+リテラル版と**両方**書いてある。リテラルが値を固定し、算術版が「なぜその値なのか」
+（plan.md §3.4 の `surfaceY+1` 規約）を記録する。
+
+### 4.5 fake は 1 つの共有イベントログを持つ
+
+`test/playground.test.ts` の `makeFakes` は 4 つの Port すべてを 1 本の
+`Ref<ReadonlyArray<string>>` に記録する。
+
+```typescript
+expect(yield* fakes.events).toStrictEqual([
+  'world.open:playground', 'sim.spawn:y=50', 'renderer.attach', 'input.attach',
+  'input.detach', 'renderer.detach', 'sim.stop', 'world.close',
+  'world.open:playground', 'sim.spawn:y=50', 'renderer.attach', 'input.attach',
+])
+```
+
+**このテストの主題は「異なるリポジトリの surface に触る順序」**であり、
+Port ごとに別々のログを持っていたらそれを表現できない。
+
+### 4.6 型が assertion であることがある
+
+`test/launch-options.test.ts` の
+`an explicit undefined FIELD means "not supplied", not "blank it out"` は、
+`exactOptionalPropertyTypes` 下で**コンパイルが通ること自体**がアサーションである。
+`LaunchOptions` のフィールドが `?: T` に変わったら `pnpm typecheck` が落ちる。
+
+こういうテストにはコメントでそう書くこと。書かないと「実行時に何も検証していない」
+と判断されて消される。
+
+## 5. カバレッジ
+
+**閾値は現在設定していない。意図的である。**
+
+参照実装は branches / functions / lines / statements の 99% を強制している
+（`docs/reference/shipping-readiness-2026-07-10.md`）。
+スケルトンに 99% を課しても意味がない: 型だけのモジュール数個で自明に満たされ、
+本実装の品質について何も言わない。
+
+- 計測とレポートは常に動く（`pnpm test:coverage`、CI でもアーティファクト化）。
+- **99% ゲートは完了条件（§2）到達時に `vitest.config.ts` と CI の両方で有効化する。**
+  `vitest.config.ts` の `coverage.thresholds` にコメントアウトした形で置いてある。
+
+kit 固有の注意: **カバレッジは Port の向こう側を測れない。** 本リポジトリのコードは
+4 つの Port を呼ぶだけなので、fake を通せば行カバレッジは容易に高くなる。
+99% を達成しても「実 Layer で 1 秒以内に起動する」ことは 1 ミリも保証しない。
+**それを保証するのは §2.2 の E2E だけである。**
+
+## 6. CI
+
+`.github/workflows/ci.yaml`。`pnpm verify` と同じ内容 + カバレッジ。
+
+```
+typecheck (build + test の 2 プロジェクト)
+  → lint (oxlint)
+  → check:deps (依存ホワイトリスト + 循環 + Date.now() 禁止)  ← ハードゲート
+  → test
+  → coverage (閾値なし、アーティファクト化)
+```
+
+`check:deps` は plan.md §5.1-4「依存ホワイトリストCIを初回コミットから」の実体。
+参照実装の `check-package-dag.ts` は警告を出して常に 0 で終了していた
+（落ちないゲートはゲートではなくドキュメントである）。本リポジトリのものは
+違反があれば必ず非ゼロ終了する。
+
+E2E ジョブは §2.2 の実装時に追加する。SwiftShader を使う以上 Linux ランナーで動くが、
+`workers: 1` にするので実行時間は素直に本数に比例する。
+
+## 7. これから必要なテスト
+
+[design-notes.md](./design-notes.md) の「（要追加）」印を参照。特に重要な未実装:
+
+| テスト | 対応 | いつ |
+| --- | --- | --- |
+| **最小 E2E（起動→操作→スクリーンショット）** | DN-07 | **完了条件。** 4 Port の実装が揃ってから |
+| `a real boot with real Layers stays inside 1000ms` | DN-02 | 同上。**現状のバジェットテストは算術しか見ていない** |
+| `no fiber survives teardown`（`Fiber.roots` 相当） | DN-03 | 本実装時。現状は「旧ハンドルが新フレームを見ない」で代用しており必要条件にすぎない |
+| `100 consecutive relaunches leak neither memory nor listeners` | DN-03 | 本実装時 |
+| `a failing detach does not prevent the remaining teardown steps` | DN-04 | 失敗する fake を足す |
+| `no InputService implementation exists in this repository` | DN-01 | ソース走査 |
+| `the kit does not export a topological sort` | DN-05 | API ロック |
+| `FIRST_FRAME_DELTA_SECS equals mc-sim's` | DN-06 | mc-sim 公開時。直後にこの定数を削除する |
+| `no escape-hatch comment exists in this repository` | DN-09 | ソース走査 |
+| APIロックの diff テスト | plan.md §6 Step 0-3 | publish 開始前（必須） |
