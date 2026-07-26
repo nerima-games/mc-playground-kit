@@ -89,15 +89,36 @@ export const DurationMillis = Brand.refined<DurationMillis>(
 
 /**
  * Convert an interval between two monotonic readings (seconds) into a duration
- * (milliseconds), clamping a negative interval to zero.
+ * (milliseconds). TOTAL: every pair of `number`s maps to a `DurationMillis`.
  *
  * The clamp is not defensive noise. `MonotonicTimeSecs` promises not to go
  * backwards, but a test clock, a replayed trace or a mis-stamped worker message
  * can hand over a pair in the wrong order — and a negative phase duration would
  * make a slow boot look fast, which is worse than reporting a zero.
+ *
+ * A NON-FINITE interval reaches the same floor, and for the same reason. Note
+ * that this function takes bare `number`s, not `MonotonicTimeSecs`: a NARROWER
+ * mirror of the Clock Port satisfies the same Tag at run time with fields
+ * reading `undefined` (`domain/kernel-vocabulary.ts`), and `undefined -
+ * undefined` is `NaN`. `DurationMillis` is a `Brand.refined` constructor
+ * requiring `Number.isFinite(value) && value >= 0`, so before this guard a
+ * broken reading THREW — inside `phase()`, inside a `launch` whose signature is
+ * `Effect<PlaygroundHandle, never, ...>`. A defect is not in the error channel,
+ * and the launch died rather than reporting a number.
+ *
+ * Zero rather than an invented large duration, because the invented number
+ * would be a CLAIM: `classifyBootTimings` would name a specific phase as
+ * overrunning by a specific amount and send somebody to optimise work that was
+ * never measured. Zero says only what the negative clamp already says — "these
+ * two readings are not a measurement" — and a phase reported at 0 ms is the
+ * same admission the doc above already accepts as the least-bad answer.
  */
-export const elapsedMillis = (fromSecs: number, toSecs: number): DurationMillis =>
-  DurationMillis(Math.max(0, (toSecs - fromSecs) * 1000))
+export const elapsedMillis = (fromSecs: number, toSecs: number): DurationMillis => {
+  const millis = (toSecs - fromSecs) * 1000
+  // `Math.max(0, NaN)` is `NaN` and `Math.max(0, Infinity)` is `Infinity`, so
+  // the finiteness test has to come first; clamping alone never removed either.
+  return DurationMillis(Number.isFinite(millis) ? Math.max(0, millis) : 0)
+}
 
 // ---------------------------------------------------------------------------
 // Phases

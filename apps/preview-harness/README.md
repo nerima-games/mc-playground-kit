@@ -84,31 +84,34 @@ verdict         OVER boot 1060.0ms / 1000ms budget over=[world+500.0ms]
 | `stages` | `3` | 宣言順チェッカの矛盾報告と、モジュール登録の評価回数 |
 | `options` | `4` | `normalizeLaunchOptions` の既定値と `Supplied<T>` の意味、予算表 |
 
-## 見つけたもの
+## 見つけたもの（3 件、すべて修正済み）
 
-`--stats` が全部を数値で出す。各項目に file:line と再現コマンドが付いている。
+`--stats` が全部を数値で出す。**3 件とも直っており、それぞれ `test/` のテストが固定している。**
+以下は「何だったのか」と「いま何が守っているのか」である。
+`--stats` の数字は、見つけるための数字から、戻っていないことを確かめる数字になった。
 
-| # | 内容 | 場所 |
+| # | かつての内容 | いま固定しているテスト |
 | --- | --- | --- |
-| KIT-1 | **世代交代した handle の `stop()` が、生きているプレビューの Port を落とす** | `application/playground.ts:389-393` |
-| KIT-2 | **1 回の launch でモジュールの `frameStages` が 2 回評価される** | `application/playground.ts:344`, `:352` |
-| KIT-3 | `elapsedMillis` が非有限入力で throw する（doc は負値の話しかしていない） | `domain/boot-phase.ts:99-100` |
+| KIT-1 | **世代交代した handle の `stop()` が、生きているプレビューの Port を落とす** | `REGRESSION: a late stop() on a superseded handle does not kill the live preview` |
+| KIT-2 | **1 回の launch でモジュールの `frameStages` が 2 回評価される** | `REGRESSION: one launch evaluates a module's frameStages exactly ONCE` ほか 1 件 |
+| KIT-3 | `elapsedMillis` が非有限入力で throw する（doc は負値の話しかしていない） | `REGRESSION: a non-finite reading is a zero, not a defect that kills the launch` |
 
-### KIT-1 —— 一番重いもの
+### KIT-1 —— 一番重かったもの
 
-`application/playground.ts:397-402` は**まさにこれ**をコメント付きで守っている:
+`application/playground.ts` は**まさにこれ**をコメント付きで守っていた:
 
 ```ts
 // Only clear the shared slots if THIS generation is still the current
 // one. A relaunch has already replaced it, and a late stop() on the old
 // handle must not unregister the new preview.
-const installed = yield* Ref.get(generationRef)
-if (Option.isSome(installed) && installed.value === generation) {
 ```
 
-**ガードは正しい。守っている対象が 2 つ足りない。**
-その 2 行上（`:389-393`）の 4 つの Port teardown は無条件に走り、
-`services`（`:312-318`）は同じ Layer から解決された**同じオブジェクト**である。
+**ガードは正しかった。守っている対象が 4 つ足りなかった。**
+その 2 行上の 4 つの Port teardown は無条件に走り、
+`services` は同じ Layer から解決された**同じオブジェクト**である。
+
+いまは 4 つの teardown も同じガードの中にあり、ガードは単一の `Ref.modify` で
+teardown 権を原子的に取る（同じ handle への並行 `stop` が両方勝つことはない）。
 
 ```console
 $ pnpm preview --scenario stale-stop --at 6 --view ledger --once --ascii
@@ -123,50 +126,56 @@ $ pnpm preview --scenario stale-stop --at 6 --view ledger --once --ascii
                   20     0.0 ms  input       attach
                   21     0.0 ms  simulation  tick
                   22     0.0 ms  renderer    renderFrame
-                  23     0.0 ms  input       detach            <- fired by a SUPERSEDED handle, against the LIVE ports
-                  24     0.0 ms  renderer    detach            <- fired by a SUPERSEDED handle, against the LIVE ports
-                  25     0.0 ms  simulation  stop              <- fired by a SUPERSEDED handle, against the LIVE ports
-                  26     0.0 ms  world       closeWorld        <- fired by a SUPERSEDED handle, against the LIVE ports
-                  27     0.0 ms  simulation  tick              <- 閉じたワールドへフレームが流れ続ける
-                  28     0.0 ms  renderer    renderFrame
+                                                               <- s3: superseded handle の stop()。何も出ない
+                  23     0.0 ms  simulation  tick              <- 開いたままのワールドへフレームが流れる
+                  24     0.0 ms  renderer    renderFrame
 ```
 
-teardown バグとして**最悪の形**である。生きているプレビューの入力リスナは解除され、
+以前はここに `input detach` / `renderer detach` / `simulation stop` / `world closeWorld` の
+4 行が入り、そのあとのフレームは**閉じられたワールド**へ流れていた。
+teardown バグとして最悪の形である —— 生きているプレビューの入力リスナは解除され、
 renderer は detach され、simulation は停止し、world は閉じられているのに、
 `isRunning` は `true`、`playground.current` は `Some`、`framesRendered` は増え続ける。
+**Port から導かれる読み取りが 1 つも無いからである。**
 
-**これはこのリポジトリにとって仮定の話ではない。**
-`stop` が best-effort で `launch` が再入可能である理由そのもの（`playground.ts:120-127`）が、
+**これはこのリポジトリにとって仮定の話ではなかった。**
+`stop` が best-effort で `launch` が再入可能である理由そのもの（`playground.ts` のモジュール冒頭）が、
 「参照実装の quit ステップはタイムアウトで打ち切られ、**次のワールドが始まったあとに完了しうる**」
 だからである。上のシーケンスがまさにそれである。
 
-`test/playground.test.ts:485` の名前は
-`REGRESSION: a late stop() on a superseded handle does not kill the live preview` で、
-**正しいことについてのテストである**。ただし `liveHandle.isRunning`（`:498`）と
-`playground.current`（`:499`）しか見ておらず、
-それはガードが既に守っている 2 つのフィールドそのものである。
-`fakes.events` を見ていない。4 つの呼び出しはそこに出る。
+テスト側も直した。`REGRESSION: a late stop() on a superseded handle does not kill the live preview`
+は名前のとおり**正しいことについてのテストだった**が、`liveHandle.isRunning` と
+`playground.current` —— ガードが既に守っていた 2 つのフィールド —— しか見ていなかった。
+いまは `fakes.events` を stale stop の前後で比較する。4 つの呼び出しはそこにしか出ない。
 
-`:506` の `two Layer builds are two independent harnesses` にも同じ死角がある
-（`left.stop` が `right` の使っている Port を detach するが、`right.isRunning` しか見ていない）。
+`two Layer builds are two independent harnesses` にも同じ死角があった
+（`left.stop` が `right` の使っている Port を detach していた）。
+こちらは**ハーネスのバグではない** —— Port は 4 個のオブジェクトであり、
+2 つのハーネスで 1 組を共有するのは呼び出し側の決定である。
+テストは各ハーネスに独立の fake を与え、2 つのイベントログを別々に見るようにした。
+そうして初めて「independent」がフェイクではなくハーネスについての主張になる。
 
 ### KIT-2
 
-`playground.ts:344` が `phase('modules', flattenStages(...))` を走らせ、
-`:352` が `stageOrderViolations(...)` を走らせる。後者は内部でもう一度
-`flattenStages` を呼ぶ（`launch-options.ts:333`）。帰結は 2 つ:
+`phase('modules', flattenStages(...))` のあとに `stageOrderViolations(...)` を走らせていた。
+後者は内部でもう一度 `flattenStages` を呼ぶ。帰結は 2 つ:
 
 1. **`modules` フェーズが過少報告する。** 登録コストの半分が `phase()` の外に落ち、
-   `playground.ts:322` の「Every phase in `BOOT_PHASE_ORDER` goes through here」に反する。
+   `playground.ts` の「Every phase in `BOOT_PHASE_ORDER` goes through here」に反する。
    **ブートバジェットを製品にしているリポジトリで。**
 2. **`stageOrderWarnings` が、pump が走らせないステージについての警告になる。**
    登録 Effect が冪等でないモジュール（`Ref.make` を中に持つ —— まさに
    `frameStages` が Effect になった理由の形）は、2 回目に**別の**
    `StageRegistration` 集合を返す。
 
-テストスイートのモジュールはすべて `Effect.succeed([...])` で、冪等かつ無料である
-（`test/playground.test.ts:132, :289, :536, :559` と `test/launch-options.test.ts:33-35`）。
-**構造上、二重評価が見えない。**
+修正は `flattenedStageOrderViolations` —— 平坦化済みの配列を受け取る純粋関数 —— を足し、
+boot path はそれを 1 回きりの評価結果に対して呼ぶ。
+`stageOrderViolations`（モジュールを受け取る版）は残っているが、doc に
+「既に平坦化したなら使うな」と書いてある。
+
+テストスイートのモジュールはすべて `Effect.succeed([...])` で、冪等かつ無料だった。
+**構造上、二重評価が見えなかった。**
+いまは 2 本のテストが登録 Effect で `Ref` を触るモジュールを使う。
 
 ## 本物の Layer ができたとき
 

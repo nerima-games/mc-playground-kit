@@ -4,8 +4,8 @@
  * A dev application, not shipped API.
  *
  * **Nothing here asserts.** These probes print. Anything in here that turns out
- * to be a real invariant belongs in `test/`, where it can fail CI; each FINDING
- * says which test should exist and why the existing suite cannot see it.
+ * to be a real invariant belongs in `test/`, where it can fail CI; each note
+ * says which test holds the claim and what the number used to be.
  */
 import { Effect, Layer, Option, Ref } from 'effect'
 import { Playground, PlaygroundLayer, type PlaygroundHandle } from '../../application/playground'
@@ -128,35 +128,24 @@ const staleStopProbe = Effect.gen(function* () {
     `   ${cell('live.framesRendered after one more frame', 46)}${String(result.framesRendered)}`,
     `   ${cell('what that frame did to the ports', 46)}${result.afterFrame.join(', ') || '(none)'}`,
     '',
-    '   FINDING KIT-1. application/playground.ts:397-402 guards the two shared Ref slots against',
-    '   exactly this, with the comment:',
+    '   The first row is the one to read. `services` (playground.ts:312-318) is resolved from the',
+    '   caller\'s Layer, so a superseded handle holds the SAME four objects the live preview is',
+    '   using — and the four port teardowns used to run unconditionally, two lines above the guard',
+    '   that already protected `generationRef` and `handleRef`. The live preview\'s input listeners',
+    '   were unregistered, its renderer detached, its simulation stopped and its world closed,',
+    '   while isRunning, current and framesRendered all kept reading healthy, because none of them',
+    '   is derived from a port.',
     '',
-    '       // Only clear the shared slots if THIS generation is still the current',
-    '       // one. A relaunch has already replaced it, and a late stop() on the old',
-    '       // handle must not unregister the new preview.',
+    '   The ports are now inside the same guard, and the guard is a single atomic Ref.modify, so',
+    '   two concurrent stops on one handle cannot both win the teardown either.',
     '',
-    '   The guard is correct and covers `generationRef` and `handleRef` — which is why',
-    '   isRunning and current above are still healthy. But the four PORT teardowns two lines',
-    '   earlier (playground.ts:389-393) run unconditionally, and `services` (playground.ts:312-318)',
-    '   is resolved from the same Layer, so they are the SAME objects the live preview is using.',
-    '',
-    '   The result is the worst shape a teardown bug can take: the live preview\'s input listeners',
-    '   are unregistered, its renderer is detached, its simulation is stopped and its world is',
-    '   closed, while every reading the harness offers says it is fine. Frames keep being accepted',
-    '   and keep reaching a renderer that has been told to let go of its context.',
-    '',
-    '   This is not hypothetical for this repository. The whole reason `stop` is best-effort and',
-    '   `launch` is re-entrant (playground.ts:120-127) is that the reference\'s quit step could be',
-    '   cut off by its timeout and finish late — i.e. after the next world had started. That is',
-    '   precisely the sequence above.',
-    '',
-    '   test/playground.test.ts:485 is named `REGRESSION: a late stop() on a superseded handle does',
-    '   not kill the live preview` and asserts liveHandle.isRunning (:498) and playground.current',
-    '   (:499). It never inspects fakes.events, which is where the four calls appear. The test is',
-    '   about the right thing and looks at the two fields the guard already protects.',
-    '   test/playground.test.ts:506 `two Layer builds are two independent harnesses` has the same',
-    '   blind spot: left.stop detaches ports right is using, and only right.isRunning is checked.',
-    '   Reproduce: pnpm preview --scenario stale-stop --at 5 --view ledger --once --ascii',
+    '   Pinned by test/playground.test.ts `REGRESSION: a late stop() on a superseded handle does',
+    '   not kill the live preview`, which now asserts fakes.events across the stale stop — the',
+    '   only place those four calls are visible — and submits a frame afterwards. `two Layer builds',
+    '   are two independent harnesses` gives each harness its own fakes and checks the two event',
+    '   logs separately, because four Ports are four objects and sharing them is a caller\'s',
+    '   decision, not the harness\'s.',
+    '   Watch it: pnpm preview --scenario stale-stop --at 5 --view ledger --once --ascii',
   ]
 })
 
@@ -176,14 +165,20 @@ const doubleRegistrationProbe = Effect.gen(function* () {
    * launch-options.ts:296-299 — and it is the shape the double evaluation
    * actually damages, because each run produces a DIFFERENT stage set.
    */
+  const ran = yield* Ref.make<ReadonlyArray<string>>([])
   const stateful: PreviewModule = {
     frameStages: Effect.gen(function* () {
       const generation = yield* Ref.updateAndGet(evaluations, (seen) => seen + 1)
+      const id = `preview:stage-of-registration-${String(generation)}`
       return [
         {
-          id: StageId(`preview:stage-of-registration-${String(generation)}`),
-          run: () => Effect.void,
+          id: StageId(id),
+          // Declares an `after` on an id only THIS registration has, so the
+          // warning names the registration the warnings were derived from.
+          after: [StageId(`preview:sentinel-of-registration-${String(generation)}`)],
+          run: () => Ref.update(ran, (seen) => (seen.includes(id) ? seen : [...seen, id])),
         },
+        { id: StageId(`preview:sentinel-of-registration-${String(generation)}`), run: () => Effect.void },
       ]
     }),
   }
@@ -219,33 +214,41 @@ const doubleRegistrationProbe = Effect.gen(function* () {
     `   ${cell('...plus stageOrderViolations()', 44)}${String(afterViolations)}`,
     `   ${cell('the `modules` phase timing', 44)}${modulesTiming === undefined ? '(missing)' : `${fixed(modulesTiming.durationMillis, 3)} ms`}`,
     '',
-    '   FINDING KIT-2. playground.ts:344 evaluates the modules inside phase(\'modules\'):',
+    `   ${cell('the stage the PUMP ran', 44)}${(yield* Ref.get(ran)).join(', ') || '(none)'}`,
+    `   ${cell('the stage stageOrderWarnings names', 44)}${handle.stageOrderWarnings.map((violation) => String(violation.stage)).join(', ') || '(none)'}`,
+    `   ${cell('...the same registration?', 44)}${
+      (yield* Ref.get(ran)).join(',') === handle.stageOrderWarnings.map((violation) => String(violation.stage)).join(',')
+        ? 'yes'
+        : 'NO — the warnings describe a preview that does not exist'
+    }`,
     '',
-    '       const stages = yield* phase(\'modules\', flattenStages(resolved.modules))',
+    '   One evaluation per launch, and it happens inside phase(\'modules\'). The boot path used to',
+    '   flatten twice — once there, and again in `stageOrderViolations(resolved.modules)`, which',
+    '   flattens the modules itself. Two consequences, and the second was the one that bit:',
     '',
-    '   and playground.ts:352 then evaluates them again:',
-    '',
-    '       const warnings = yield* stageOrderViolations(resolved.modules)',
-    '',
-    '   because stageOrderViolations calls flattenStages itself (launch-options.ts:333). Two',
-    '   consequences, and the second is the one that bites:',
-    '',
-    '   1. The `modules` phase under-reports. Half the module registration cost falls outside',
+    '   1. The `modules` phase under-reported. Half the module registration cost fell outside',
     '      phase(), contradicting playground.ts:322 — "Every phase in BOOT_PHASE_ORDER goes',
     '      through here" — in the one repository whose product is a boot budget.',
     '',
-    '   2. `stageOrderWarnings` describes stages the pump will never run. A module whose',
+    '   2. `stageOrderWarnings` described stages the pump would never run. A module whose',
     '      registration Effect is not idempotent — `Ref.make` inside it, which is the shape the',
-    '      Effect exists to permit — yields a second, distinct set of StageRegistrations, and the',
-    '      warnings on the handle are computed over those. The module above stamps its own',
-    `      registration number into its stage id, and the two evaluations produced`,
-    `      preview:stage-of-registration-1 (which the pump runs) and`,
-    `      preview:stage-of-registration-2 (which stageOrderWarnings was derived from).`,
+    '      Effect exists to permit — yields a second, DISTINCT set of StageRegistrations, and the',
+    '      warnings on the handle were computed over those. The module above stamps its own',
+    '      registration number into its stage id; the two evaluations produced',
+    '      preview:stage-of-registration-1 (which the pump ran) and',
+    '      preview:stage-of-registration-2 (which the warnings came from).',
     '',
-    '   Every module in test/playground.test.ts (:132, :289, :536, :559) and',
-    '   test/launch-options.test.ts (:33-35) is `Effect.succeed([...])`, which is idempotent and',
-    '   free. The double evaluation is invisible by construction.',
-    '   Reproduce: pnpm preview --scenario relaunch --view stages --at 6 --once --ascii',
+    '   `flattenedStageOrderViolations` is pure and takes the flattened array, so the warnings on',
+    '   a handle are now derived from the exact stages that preview is running.',
+    '   `stageOrderViolations` still exists for a caller who has modules and no stages, and its',
+    '   doc says why anyone who has already flattened must not use it.',
+    '',
+    '   Every module in test/playground.test.ts and test/launch-options.test.ts was',
+    '   `Effect.succeed([...])`, which is idempotent and free — the double evaluation was invisible',
+    '   by construction. Two tests in test/playground.test.ts now use a module that allocates in',
+    '   its registration Effect: `REGRESSION: one launch evaluates a module\'s frameStages exactly',
+    '   ONCE` and `REGRESSION: the warnings describe the stages the PUMP runs`.',
+    '   Watch it: pnpm preview --scenario relaunch --view stages --at 6 --once --ascii',
   ]
 })
 
@@ -273,7 +276,9 @@ const budgetProbe = (): ReadonlyArray<string> => {
   const nonFinite = [
     ['0 -> Infinity', 0, Number.POSITIVE_INFINITY],
     ['0 -> NaN', 0, Number.NaN],
+    ['NaN -> NaN (a mirrored clock)', Number.NaN, Number.NaN],
     ['0 -> -5 (the documented case)', 0, -5],
+    ['10 -> 10.25 (an ordinary one)', 10, 10.25],
   ] as const
 
   const nonFiniteRows = nonFinite.map(([label, from, to]) => {
@@ -308,22 +313,24 @@ const budgetProbe = (): ReadonlyArray<string> => {
     ...section('ELAPSED-MILLIS', 'elapsedMillis clamps a backwards interval. What about a broken one?'),
     ...nonFiniteRows,
     '',
-    '   FINDING KIT-3. boot-phase.ts:99-100 takes two bare `number`s and clamps only the negative',
-    '   case, while its doc (boot-phase.ts:90-98) discusses only that case. `DurationMillis` is a',
-    '   Brand.refined constructor requiring `Number.isFinite(value) && value >= 0`, so a non-finite',
-    '   reading THROWS — inside `phase()`, inside a `launch` whose signature is',
+    '   elapsedMillis is TOTAL: every pair of `number`s maps to a DurationMillis, and no row above',
+    '   can throw. It used to clamp only the negative case, which left `DurationMillis` — a',
+    '   Brand.refined constructor requiring `Number.isFinite(value) && value >= 0` — to reject a',
+    '   non-finite reading by THROWING, inside `phase()`, inside a `launch` whose signature is',
     '   `Effect<PlaygroundHandle, never, ...>`. The error channel says a launch cannot fail; a',
-    '   defect is not in the error channel, and the launch dies.',
+    '   defect is not in the error channel, and the launch died.',
     '',
-    '   How reachable this is depends on the clock. `MonotonicTimeSecs` is itself refined, so a',
+    '   How reachable that was depends on the clock. `MonotonicTimeSecs` is itself refined, so a',
     '   well-formed ClockPort cannot produce Infinity — but `elapsedMillis` does not take',
     '   `MonotonicTimeSecs`, it takes `number`, and domain/kernel-vocabulary.ts:30-45 documents at',
     '   length that a NARROWER mirror of the Clock Port satisfies the same Tag at run time with',
-    '   fields reading `undefined`. `undefined - undefined` is NaN. The mirror hazard and this',
-    '   unguarded conversion are one step apart.',
+    '   fields reading `undefined`. `undefined - undefined` is NaN — the third row above.',
     '',
-    '   test/boot-phase.test.ts:121 covers the negative clamp and :281 tests DurationMillis.option',
-    '   directly; nothing calls elapsedMillis with a non-finite reading.',
+    '   Zero rather than an invented large duration, because a fabricated number would make',
+    '   classifyBootTimings name a specific phase as overrunning by a specific amount and send',
+    '   somebody to optimise work that was never measured. Zero says only what the backwards clamp',
+    '   already says. Pinned by test/boot-phase.test.ts `REGRESSION: a non-finite reading is a',
+    '   zero, not a defect that kills the launch`.',
   ]
 }
 
@@ -358,8 +365,8 @@ const optionsProbe = (): ReadonlyArray<string> => {
 const HEADER: ReadonlyArray<string> = [
   'mc-playground-kit --stats — the harness, measured against fake Ports',
   '',
-  'Nothing here asserts. Every line is a quantity, and every FINDING names what should become a',
-  'test in test/ — that is where a claim can fail CI. Run with --ascii for a pasteable copy.',
+  'Nothing here asserts. Every line is a quantity, and every note names the test in test/ that',
+  'holds the claim to it — that is where it can fail CI. Run with --ascii for a pasteable copy.',
   '',
   'Every millisecond below comes from a ClockPort this report programs, so the numbers are the',
   'same on a laptop and in CI. That is deliberate: a boot budget measured against a wall clock',

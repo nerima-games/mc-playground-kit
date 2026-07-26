@@ -63,17 +63,19 @@ plan.md §3.10 は kit を「**最も丁寧に作る**」部分と呼ぶ。理�
 ベンチマークは削除される。このアプリが出すミリ秒はすべて fixture がプログラムした
 `ClockPort` 由来なので、ノート PC でも CI でも同じ数字になる。
 
-`--stats` は数値レポートで、**3 件の発見**に file:line と再現コマンドを付けて出す。
+`--stats` は数値レポートで、かつて 3 件の発見を出していた。**3 件とも修正済みで、
+それぞれ `test/` のテストが固定している。** `--stats` は今も同じ数字を出すが、
+数字の意味が変わった —— 見つけるための数字ではなく、戻っていないことを確かめる数字である。
 
-| # | 内容 | 場所 |
+| # | かつての内容 | いま固定しているテスト |
 | --- | --- | --- |
-| KIT-1 | **世代交代した handle の `stop()` が、生きているプレビューの Port を落とす。** `isRunning` も `current` も `framesRendered` も健全なまま | `application/playground.ts:389-393` |
-| KIT-2 | 1 回の launch でモジュールの `frameStages` が 2 回評価される。2 回目は `phase()` の外で、`stageOrderWarnings` はそちらから導かれる | `application/playground.ts:344`, `:352` |
-| KIT-3 | `elapsedMillis` が非有限入力で throw する。doc は負値の話しかしていない | `domain/boot-phase.ts:99-100` |
+| KIT-1 | 世代交代した handle の `stop()` が、生きているプレビューの Port を落とす（`isRunning` も `current` も `framesRendered` も健全なまま） | `test/playground.test.ts` `REGRESSION: a late stop() on a superseded handle does not kill the live preview` —— `fakes.events` を見る。4 つの呼び出しはそこにしか現れない |
+| KIT-2 | 1 回の launch でモジュールの `frameStages` が 2 回評価される。2 回目は `phase()` の外で、`stageOrderWarnings` はそちらから導かれる | `REGRESSION: one launch evaluates a module's frameStages exactly ONCE` / `REGRESSION: the warnings describe the stages the PUMP runs, not a second registration` |
+| KIT-3 | `elapsedMillis` が非有限入力で throw する。doc は負値の話しかしていない | `test/boot-phase.test.ts` `REGRESSION: a non-finite reading is a zero, not a defect that kills the launch` |
 
-KIT-1 は本書 §8 の「まだ書いていないテスト」の一部でもある
-（`test/playground.test.ts:485` は**正しいことについてのテスト**だが、
-ガードが既に守っている 2 つのフィールドしか見ていない）。
+`--stats` の `STALE-STOP` は「superseded stop が触った Port」を `(none)` と出し、
+`DOUBLE-REGISTRATION` は 1 launch あたり 1 評価を出す。
+どちらかが変わったらこの表の行が戻ってきたということである。
 全件の詳細は [`apps/preview-harness/README.md`](../apps/preview-harness/README.md)。
 
 ### 2.3 本物の Layer ができたとき

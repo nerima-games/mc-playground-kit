@@ -80,9 +80,9 @@ import {
   type PhaseTiming,
 } from '../domain/boot-phase'
 import {
+  flattenedStageOrderViolations,
   flattenStages,
   normalizeLaunchOptions,
-  stageOrderViolations,
   type LaunchOptions,
   type ResolvedLaunchOptions,
   type StageOrderViolation,
@@ -341,6 +341,18 @@ export const makePlayground: Effect.Effect<PlaygroundApi> = Effect.gen(function*
       yield* phase('simulation', services.simulation.spawn(resolved.spawnKit))
       yield* phase('renderer', services.renderer.attach)
       yield* phase('input', services.input.attach)
+      // ONE evaluation of `frameStages`, and it happens here, inside the phase
+      // that is supposed to be measuring it.
+      //
+      // `frameStages` is an Effect so that a module can acquire a service or
+      // allocate a `Ref` in order to build its stages, which makes a second
+      // evaluation a second, DISTINCT set of `StageRegistration`s. Deriving the
+      // stage-order warnings from `stageOrderViolations(resolved.modules)` did
+      // exactly that: it re-ran every module and reported on stages the pump
+      // would never run, and it paid the registration cost a second time
+      // OUTSIDE `phase()`, which under-reported the one number this repository
+      // exists to produce. `flattenedStageOrderViolations` is pure and takes the
+      // array below, so both problems are gone by construction.
       const stages = yield* phase('modules', flattenStages(resolved.modules))
       // One frame end to end, so that a handle is a LIVE preview rather than a
       // promise of one. Without this the budget would stop measuring one step
@@ -349,7 +361,7 @@ export const makePlayground: Effect.Effect<PlaygroundApi> = Effect.gen(function*
 
       const timings = yield* Ref.get(timingsRef)
       const budget = classifyBootTimings(timings)
-      const warnings = yield* stageOrderViolations(resolved.modules)
+      const warnings = flattenedStageOrderViolations(stages)
 
       // --- Install this launch's generation ----------------------------------
       const generation: Generation = {
@@ -383,22 +395,51 @@ export const makePlayground: Effect.Effect<PlaygroundApi> = Effect.gen(function*
        * Every port's teardown runs even if an earlier one fails: a best-effort
        * teardown that gives up halfway is the reference's timed-out quit step,
        * which is what made re-entrancy necessary in the first place.
+       *
+       * -------------------------------------------------------------------
+       * Only the CURRENT generation may touch the ports
+       * -------------------------------------------------------------------
+       *
+       * `stopGeneration` is unconditional because it touches nothing but this
+       * launch's OWN state (rule 4). Everything after it is shared, and shared
+       * includes the four ports: `services` was resolved from the caller's
+       * Layer (see the `BootServices` block above), so a relaunch that resolved
+       * the same Layer is holding the SAME four objects. A superseded handle
+       * that detached them would unregister the live preview's input listeners,
+       * detach its renderer, stop its simulation and close its world — while
+       * `isRunning`, `current` and `framesRendered` all still read healthy,
+       * because none of them is derived from a port.
+       *
+       * That is not a hypothetical ordering. The whole reason `stop` is
+       * best-effort and `launch` is re-entrant (see rule 3 and the module
+       * header) is that the reference's quit step could be cut off by its
+       * timeout and finish AFTER the next world had started.
+       *
+       * The claim is a single atomic `Ref.modify` rather than a get-then-set,
+       * so two concurrent `stop`s on the same handle cannot both win it — which
+       * is also what makes `stop` idempotent in the ports, not merely in the
+       * flags.
        */
       const teardown: Effect.Effect<void> = Effect.gen(function* () {
         yield* stopGeneration(generation)
+        const claimed = yield* Ref.modify(generationRef, (installed) =>
+          Option.isSome(installed) && installed.value === generation
+            ? [true, Option.none<Generation>()]
+            : [false, installed],
+        )
+        // A relaunch has already replaced this generation, or an earlier stop()
+        // already ran: either way the ports and the shared slots belong to
+        // somebody else now, and a late stop() must be inert with respect to
+        // them.
+        if (!claimed) {
+          return
+        }
+        yield* Ref.set(handleRef, Option.none())
         yield* Effect.forEach(
           [services.input.detach, services.renderer.detach, services.simulation.stop, services.world.closeWorld],
           (step) => step.pipe(Effect.catchAllCause((cause) => Effect.logError(`Playground teardown: ${Cause.pretty(cause)}`))),
           { discard: true },
         )
-        // Only clear the shared slots if THIS generation is still the current
-        // one. A relaunch has already replaced it, and a late stop() on the old
-        // handle must not unregister the new preview.
-        const installed = yield* Ref.get(generationRef)
-        if (Option.isSome(installed) && installed.value === generation) {
-          yield* Ref.set(generationRef, Option.none())
-          yield* Ref.set(handleRef, Option.none())
-        }
       })
 
       yield* Effect.logInfo(`playground: ${describeBootVerdict(budget)}`)

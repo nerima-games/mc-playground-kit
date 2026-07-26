@@ -127,6 +127,32 @@ describe('elapsedMillis', () => {
       expect(elapsedMillis(10, 9)).toBe(0)
     }),
   )
+
+  it.effect('REGRESSION: a non-finite reading is a zero, not a defect that kills the launch', () =>
+    Effect.sync(() => {
+      // `elapsedMillis` takes bare `number`s, not `MonotonicTimeSecs`, and
+      // domain/kernel-vocabulary.ts documents at length that a NARROWER mirror
+      // of the Clock Port satisfies the same Tag at run time with fields
+      // reading `undefined` — and `undefined - undefined` is NaN. Since
+      // `DurationMillis` is a Brand.refined constructor requiring
+      // `Number.isFinite(value) && value >= 0` (see the DurationMillis
+      // describe below), an unguarded conversion THREW, inside `phase()`,
+      // inside a `launch` typed `Effect<PlaygroundHandle, never, ...>`. The
+      // error channel says a launch cannot fail; a defect is not in the error
+      // channel, so the launch died instead of reporting a number.
+      expect(elapsedMillis(0, Number.NaN)).toBe(0)
+      expect(elapsedMillis(Number.NaN, 0)).toBe(0)
+      expect(elapsedMillis(0, Number.POSITIVE_INFINITY)).toBe(0)
+      expect(elapsedMillis(Number.NEGATIVE_INFINITY, 0)).toBe(0)
+      expect(elapsedMillis(Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY)).toBe(0)
+
+      // Zero and not an invented large duration: a fabricated number would make
+      // `classifyBootTimings` name a specific phase as overrunning by a
+      // specific amount, sending somebody to optimise work that was never
+      // measured. Zero says only what the backwards clamp above already says.
+      expect(() => elapsedMillis(0, Number.NaN)).not.toThrow()
+    }),
+  )
 })
 
 describe('classifyBootTimings', () => {

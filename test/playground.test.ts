@@ -488,18 +488,47 @@ describe('relaunch', () => {
       // AFTER the next world had started. A stale handle's stop() arriving late
       // must be inert with respect to the current preview — otherwise the fix
       // for one relaunch bug becomes the cause of another.
+      //
+      // "Inert" means the PORTS as well as the two Ref slots. `services` is
+      // resolved from the caller's Layer, so the superseded handle is holding
+      // the same four objects the live preview is using: detaching them
+      // unregisters the live preview's input listeners, detaches its renderer,
+      // stops its simulation and closes its world — and every reading the
+      // handle offers keeps saying it is fine, because none of them is derived
+      // from a port. This test therefore looks at `fakes.events`, which is the
+      // only place those four calls are visible at all.
       const fakes = yield* makeFakes()
+      const probe = yield* recordingStage('live:tick', 2)
       const staleHandle = yield* launchPlayground().pipe(Effect.provide(fakes.layer))
-      const liveHandle = yield* launchPlayground().pipe(Effect.provide(fakes.layer))
+      const liveHandle = yield* launchPlayground({ modules: [probe.module] }).pipe(
+        Effect.provide(fakes.layer),
+      )
       const playground = yield* Playground
 
+      const beforeStaleStop = yield* fakes.events
       yield* staleHandle.stop
 
+      // Not one port call. The live preview's ports are untouched.
+      expect(yield* fakes.events).toStrictEqual(beforeStaleStop)
       expect(yield* liveHandle.isRunning).toBe(true)
       expect(yield* playground.current).toStrictEqual(Option.some(liveHandle))
 
+      // ...and it is still a LIVE preview: a frame submitted after the stale
+      // stop reaches a renderer that was never detached and a world that was
+      // never closed.
+      yield* liveHandle.submitFrame(DeltaTimeSecs(0.02))
+      yield* Deferred.await(probe.reached)
+      expect(yield* liveHandle.framesRendered).toBe(2)
+
       yield* liveHandle.stop
       expect(yield* liveHandle.isRunning).toBe(false)
+      // The live handle's OWN stop is the one that releases them.
+      expect((yield* fakes.events).slice(beforeStaleStop.length)).toStrictEqual([
+        'input.detach',
+        'renderer.detach',
+        'sim.stop',
+        'world.close',
+      ])
     }).pipe(Effect.provide(PlaygroundLayer)),
   )
 
@@ -509,17 +538,39 @@ describe('relaunch', () => {
       // need no `reset`. Two previews side by side in one process is a thing a
       // preview page legitimately wants, and it is what makes `Layer.effect`
       // (not `Layer.succeed`) the right call in application/playground.ts.
-      const fakes = yield* makeFakes()
+      //
+      // Independent means independent PORTS too, which is why each harness gets
+      // its own fakes rather than sharing one Layer. Four Ports are four
+      // objects; two harnesses over one set of them are two harnesses fighting
+      // over one renderer, and `left.stop` detaching the renderer `right` is
+      // drawing into would be correct behaviour for a caller who asked for
+      // that. Asserting each side's event log separately is what makes
+      // "independent" a claim about the harness rather than about the fakes.
+      const leftFakes = yield* makeFakes()
+      const rightFakes = yield* makeFakes()
 
-      const left = yield* launchPlayground().pipe(Effect.provide(fakes.layer), Effect.provide(PlaygroundLayer))
-      const right = yield* launchPlayground().pipe(Effect.provide(fakes.layer), Effect.provide(PlaygroundLayer))
+      const left = yield* launchPlayground().pipe(
+        Effect.provide(leftFakes.layer),
+        Effect.provide(PlaygroundLayer),
+      )
+      const right = yield* launchPlayground().pipe(
+        Effect.provide(rightFakes.layer),
+        Effect.provide(PlaygroundLayer),
+      )
 
       expect(yield* left.isRunning).toBe(true)
       expect(yield* right.isRunning).toBe(true)
 
       yield* left.stop
+
       expect(yield* right.isRunning).toBe(true)
+      // `right`'s ports never heard about `left`'s teardown.
+      expect(yield* leftFakes.events).toContain('renderer.detach')
+      expect(yield* rightFakes.events).not.toContain('renderer.detach')
+      expect(yield* rightFakes.events).not.toContain('world.close')
+
       yield* right.stop
+      expect(yield* rightFakes.events).toContain('renderer.detach')
     }),
   )
 })
@@ -564,6 +615,87 @@ describe('stage order warnings', () => {
       // A warning, not a failure: the preview still runs, because refusing to
       // boot would make the harness the thing that has to be debugged.
       expect(yield* handle.isRunning).toBe(true)
+
+      yield* handle.stop
+    }).pipe(Effect.provide(PlaygroundLayer)),
+  )
+
+  it.effect('REGRESSION: one launch evaluates a module`s frameStages exactly ONCE', () =>
+    Effect.gen(function* () {
+      // `frameStages` is an Effect so that a module can acquire a service or
+      // allocate a `Ref` in order to BUILD its stages — which makes a second
+      // evaluation a second, DISTINCT set of registrations. The boot path used
+      // to evaluate them twice: once inside `phase('modules', ...)` and again
+      // via `stageOrderViolations(resolved.modules)`, which flattens the
+      // modules itself.
+      //
+      // Two consequences, and both are invisible to a module written as
+      // `Effect.succeed([...])` — which every other module in this file is,
+      // which is why nothing caught it:
+      //
+      //   1. Half the registration cost fell OUTSIDE `phase()`, so the
+      //      `modules` line of the boot budget under-reported, in the one
+      //      repository whose product is a boot budget.
+      //   2. `stageOrderWarnings` described the SECOND evaluation's stages
+      //      while the pump ran the first evaluation's, so the warnings on the
+      //      handle were about a preview that does not exist.
+      //
+      // This module stamps its registration number into its stage id, so the
+      // two are told apart by name rather than by a counter alone.
+      const fakes = yield* makeFakes()
+      const registrations = yield* Ref.make(0)
+      const stateful: PreviewModule = {
+        frameStages: Ref.updateAndGet(registrations, (count) => count + 1).pipe(
+          Effect.map((count): ReadonlyArray<StageRegistration> => [
+            { id: StageId(`preview:stage-of-registration-${String(count)}`), run: () => Effect.void },
+          ]),
+        ),
+      }
+
+      const handle = yield* launchPlayground({ modules: [stateful] }).pipe(Effect.provide(fakes.layer))
+
+      expect(yield* Ref.get(registrations)).toBe(1)
+      // ...and every phase is still accounted for, so the cost that used to
+      // escape `phase()` is now inside it.
+      expect(handle.timings.map((entry) => entry.phase)).toStrictEqual([...BOOT_PHASE_ORDER])
+
+      yield* handle.stop
+    }).pipe(Effect.provide(PlaygroundLayer)),
+  )
+
+  it.effect('REGRESSION: the warnings describe the stages the PUMP runs, not a second registration', () =>
+    Effect.gen(function* () {
+      // The sharp half of the double evaluation. This module's `after` edge is
+      // satisfied only within one registration's own stage ids, so warnings
+      // computed over a re-registration would name ids the pump never sees.
+      const fakes = yield* makeFakes()
+      const registrations = yield* Ref.make(0)
+      const ran = yield* Ref.make<ReadonlyArray<string>>([])
+
+      const stateful: PreviewModule = {
+        frameStages: Ref.updateAndGet(registrations, (count) => count + 1).pipe(
+          Effect.map((count): ReadonlyArray<StageRegistration> => {
+            const suffix = String(count)
+            return [
+              {
+                id: StageId(`render-${suffix}`),
+                after: [StageId(`sim-${suffix}`)],
+                run: () => Ref.update(ran, (seen) => [...seen, `render-${suffix}`]),
+              },
+              { id: StageId(`sim-${suffix}`), run: () => Ref.update(ran, (seen) => [...seen, `sim-${suffix}`]) },
+            ]
+          }),
+        ),
+      }
+
+      const handle = yield* launchPlayground({ modules: [stateful] }).pipe(Effect.provide(fakes.layer))
+
+      expect(handle.stageOrderWarnings).toHaveLength(1)
+      // Registration 1 is what the boot frame already ran, so the warning names
+      // registration 1's ids. Before the fix this read `render-2` / `sim-2`.
+      expect(String(handle.stageOrderWarnings[0]?.stage)).toBe('render-1')
+      expect(String(handle.stageOrderWarnings[0]?.mustFollow)).toBe('sim-1')
+      expect(yield* Ref.get(ran)).toStrictEqual(['render-1', 'sim-1'])
 
       yield* handle.stop
     }).pipe(Effect.provide(PlaygroundLayer)),

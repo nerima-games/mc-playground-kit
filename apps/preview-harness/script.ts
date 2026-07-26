@@ -189,24 +189,25 @@ const RELAUNCH: Scenario = {
 }
 
 /**
- * The finding.
+ * The regression this scenario watches.
  *
- * `application/playground.ts:397-402` guards the shared `Ref` slots against a
- * late `stop()` on a superseded handle. The four port teardowns two lines above
- * it are not guarded, and the ports are the SAME objects the live preview is
- * using — they come from one Layer.
+ * `application/playground.ts` guards the shared `Ref` slots against a late
+ * `stop()` on a superseded handle. The four port teardowns used to sit OUTSIDE
+ * that guard, and the ports are the SAME objects the live preview is using —
+ * they come from one Layer. They are inside it now; this scenario is what
+ * notices if they ever come back out.
  */
 const STALE_STOP: Scenario = {
   name: 'stale-stop',
-  headline: 'a late stop() on a superseded handle tears down the LIVE preview',
+  headline: 'a late stop() on a superseded handle must not tear down the LIVE preview',
   detail: [
     'Step 0 launches, step 2 relaunches, step 3 calls stop() on the handle from',
     'step 0 — the shape of a slow quit finishing after the next world started.',
-    'Watch the port-call ledger: input.detach, renderer.detach, simulation.stop',
-    'and world.closeWorld all fire, against the ports the LIVE preview is using.',
-    'Then watch isRunning, current and framesRendered go on reporting a healthy',
-    'preview, because the identity guard protects exactly those three and',
-    'nothing else.',
+    'Watch the port-call ledger stay EMPTY across step 3: input.detach,',
+    'renderer.detach, simulation.stop and world.closeWorld all belong to the',
+    'live preview now, and a superseded handle owns none of them. isRunning,',
+    'current and framesRendered go on reporting a healthy preview because it is',
+    'healthy — before the fix they said the same thing while the world was shut.',
   ],
   fixture: { costMillis: FREE, failingTeardown: [], modules: 'one' },
   steps: [
@@ -214,8 +215,11 @@ const STALE_STOP: Scenario = {
     at(1, 'it runs', { kind: 'submitFrames', count: 3 }),
     at(2, 'a relaunch supersedes it', { kind: 'relaunch' }),
     at(3, 'the OLD handle\'s stop finally lands', { kind: 'stopStaleHandle' }),
-    at(4, 'the live preview still says it is fine', { kind: 'note', text: 'read the FINDINGS panel' }),
-    at(5, 'and still accepts frames, into a world that has been closed', { kind: 'submitFrames', count: 2 }),
+    at(4, 'the live preview is fine, and its ports were never touched', {
+      kind: 'note',
+      text: 'read the INVARIANTS panel',
+    }),
+    at(5, 'and still accepts frames, into a world that is still open', { kind: 'submitFrames', count: 2 }),
     at(6, 'stop', { kind: 'stop' }),
   ],
 }

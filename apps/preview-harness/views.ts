@@ -257,7 +257,7 @@ export const ledgerView = (view: HarnessView, style: Style, width: number): Read
             style,
             '',
             style.paint(
-              'application/playground.ts:397-402 guards the two shared Ref slots against exactly this.',
+              'The four port teardowns belong INSIDE the identity guard in application/playground.ts.',
               BAD,
             ),
           ),
@@ -265,7 +265,7 @@ export const ledgerView = (view: HarnessView, style: Style, width: number): Read
             style,
             '',
             style.paint(
-              'The four port teardowns at :389-393 run unconditionally, and the ports are one Layer.',
+              '`services` comes from the caller\'s Layer, so a stale handle holds the live preview\'s ports.',
               BAD,
             ),
           ),
@@ -333,7 +333,7 @@ export const stagesView = (view: HarnessView, style: Style, width: number): Read
             style,
             '',
             style.paint(
-              'playground.ts:344 runs flattenStages inside phase("modules"); playground.ts:352 then calls',
+              'The boot path must flatten ONCE, inside phase("modules"), and derive the warnings from',
               BAD,
             ),
           ),
@@ -341,7 +341,7 @@ export const stagesView = (view: HarnessView, style: Style, width: number): Read
             style,
             '',
             style.paint(
-              'stageOrderViolations, which calls flattenStages AGAIN (launch-options.ts:333) — outside any phase.',
+              'that array via flattenedStageOrderViolations — not by re-running the modules.',
               BAD,
             ),
           ),
@@ -475,33 +475,36 @@ export const timelineView = (
 export const findingsView = (view: HarnessView, style: Style, width: number): ReadonlyArray<string> => {
   const findings: ReadonlyArray<{ readonly id: string; readonly hit: boolean; readonly text: string }> = [
     {
-      id: 'KIT-1',
+      id: 'ports',
       hit: view.ghostTeardowns.length > 0,
       text:
         view.ghostTeardowns.length > 0
           ? `a superseded handle's stop() ran ${view.ghostTeardowns.join(', ')} against the LIVE preview's ports, while isRunning still says ${yesNo(view.isRunning)} and current is ${view.currentIsSome ? 'Some' : 'None'}`
-          : 'a superseded handle\'s stop() would tear down the live preview\'s ports; the identity guard covers only the two Ref slots',
+          : 'a superseded handle\'s stop() touches no live port: the four teardowns are inside the same identity guard as the two Ref slots',
     },
     {
-      id: 'KIT-2',
+      id: 'stages',
       hit: view.frameStagesEvaluations > view.launches,
-      text: `each module's frameStages Effect is evaluated twice per launch (${String(view.frameStagesEvaluations)} for ${String(view.launches)} launch(es)); the second run is outside phase("modules") and is what stageOrderWarnings describes`,
+      text:
+        view.frameStagesEvaluations > view.launches
+          ? `each module's frameStages Effect ran more than once per launch (${String(view.frameStagesEvaluations)} for ${String(view.launches)} launch(es)); the extra run is outside phase("modules") and is what stageOrderWarnings would describe`
+          : `one frameStages evaluation per launch (${String(view.frameStagesEvaluations)} for ${String(view.launches)} launch(es)), inside phase("modules"); the warnings come from that same array`,
     },
     {
-      id: 'KIT-3',
+      id: 'budget',
       hit: view.current !== undefined && !view.current.withinBudget,
       text: 'the boot budget was exceeded; the verdict names the phase rather than reporting one number',
     },
   ]
 
   return [
-    heading(style, 'findings (live predicates, not assertions)', width),
+    heading(style, 'invariants (live predicates, not assertions)', width),
     ...findings.map((finding) =>
       row(
         style,
         '',
         `${style.paint(pad(finding.id, 7), finding.hit ? BAD : LABEL)}` +
-          `${style.paint(pad(finding.hit ? 'HIT' : '·', 5), finding.hit ? BAD : LABEL)}` +
+          `${style.paint(pad(finding.hit ? 'BROKEN' : 'ok', 8), finding.hit ? BAD : LABEL)}` +
           (finding.hit ? style.paint(finding.text, BAD) : style.dim(finding.text)),
       ),
     ),

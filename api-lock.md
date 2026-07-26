@@ -13,7 +13,7 @@
 <!-- ------------------------------------------------------------------------- -->
 
 format: 1
-exported declarations: 43
+exported declarations: 44
 supporting declarations: 23
 
 ## Exported
@@ -326,6 +326,12 @@ const elapsedMillis: (fromSecs: number, toSecs: number) => DurationMillis;
 
 ```ts
 const flattenStages: (modules: ReadonlyArray<PreviewModule>) => Effect.Effect<ReadonlyArray<StageRegistration>>;
+```
+
+### flattenedStageOrderViolations  `const`
+
+```ts
+const flattenedStageOrderViolations: (stages: ReadonlyArray<StageRegistration>) => ReadonlyArray<StageOrderViolation>;
 ```
 
 ### launchPlayground  `const`

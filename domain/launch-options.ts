@@ -305,6 +305,12 @@ export const flattenStages = (
 /**
  * Check the caller's declaration order against the caller's OWN `after` edges.
  *
+ * Takes the ALREADY FLATTENED stage list — the exact array the frame loop will
+ * run — and is pure, so the warnings on a `PlaygroundHandle` are guaranteed to
+ * describe the stages that preview is actually running. See
+ * `stageOrderViolations` below for why starting from the modules instead is a
+ * trap for anything that has already flattened them.
+ *
  * This is not a topological sort and must never become one — see
  * `PreviewModule`. It answers a strictly weaker and entirely local question:
  * given that the harness will run these stages in the order written, does that
@@ -327,27 +333,43 @@ export const flattenStages = (
  *   otherwise stays quiet, because deciding what a duplicate stage id means is
  *   compose's call, not a preview harness's.
  */
+export const flattenedStageOrderViolations = (
+  stages: ReadonlyArray<StageRegistration>,
+): ReadonlyArray<StageOrderViolation> => {
+  const firstIndexOf = new Map<StageId, number>()
+  stages.forEach((stage, index) => {
+    if (!firstIndexOf.has(stage.id)) {
+      firstIndexOf.set(stage.id, index)
+    }
+  })
+
+  return stages.flatMap((stage, declaredIndex) =>
+    (stage.after ?? []).flatMap((mustFollow) => {
+      const constraintIndex = firstIndexOf.get(mustFollow)
+      // Absent constraint: no edge (kernel frame.ts). Self-edge: nothing to say.
+      if (constraintIndex === undefined || mustFollow === stage.id) {
+        return []
+      }
+      return constraintIndex > declaredIndex
+        ? [{ stage: stage.id, mustFollow, declaredIndex, constraintIndex }]
+        : []
+    }),
+  )
+}
+
+/**
+ * The same check, starting from the modules — which means EVALUATING them.
+ *
+ * Convenience for a caller who has modules and no stages. A caller who has
+ * already flattened must use `flattenedStageOrderViolations` on the result
+ * instead of calling this: `frameStages` is an Effect precisely so that a
+ * module can acquire a service or allocate a `Ref` in order to build its
+ * stages, so a second evaluation is a second, DISTINCT set of
+ * `StageRegistration`s. Warnings computed over stages the frame loop will never
+ * run describe a preview that does not exist. `application/playground.ts` used
+ * to do exactly that; see the `modules` phase there.
+ */
 export const stageOrderViolations = (
   modules: ReadonlyArray<PreviewModule>,
 ): Effect.Effect<ReadonlyArray<StageOrderViolation>> =>
-  Effect.map(flattenStages(modules), (stages) => {
-    const firstIndexOf = new Map<StageId, number>()
-    stages.forEach((stage, index) => {
-      if (!firstIndexOf.has(stage.id)) {
-        firstIndexOf.set(stage.id, index)
-      }
-    })
-
-    return stages.flatMap((stage, declaredIndex) =>
-      (stage.after ?? []).flatMap((mustFollow) => {
-        const constraintIndex = firstIndexOf.get(mustFollow)
-        // Absent constraint: no edge (kernel frame.ts). Self-edge: nothing to say.
-        if (constraintIndex === undefined || mustFollow === stage.id) {
-          return []
-        }
-        return constraintIndex > declaredIndex
-          ? [{ stage: stage.id, mustFollow, declaredIndex, constraintIndex }]
-          : []
-      }),
-    )
-  })
+  Effect.map(flattenStages(modules), flattenedStageOrderViolations)
