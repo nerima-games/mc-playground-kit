@@ -466,11 +466,49 @@ packages/app/application/main/session-lifecycle-startup.ts:104-105
 
 ## 7. APIロック
 
-plan.md §6 Step 0-3 / §9 未決。ツールは未選定（api-extractor 相当の Effect-TS 互換手段）。
+plan.md §6 Step 0-3。**実装済みで、§9 のツール選定も決着している。**
 
-本リポジトリの API ロックの優先度は、mc-sim ほど高くない。
+| 項目 | 内容 |
+| --- | --- |
+| 生成物 | リポジトリ直下の `api-lock.md`（公開宣言 43 件 + 参照されている非 export 宣言 23 件。コミット対象） |
+| 生成器 | `scripts/api-lock.ts`（16 リポジトリに byte-identical で vendor。`scripts/check-dependency-whitelist.ts` と同じ方式で、編集してよいのは `REPOSITORY_POLICY` だけ） |
+| 検査 | `pnpm api:check` — `api-lock.md` が実際の公開 API と食い違えば非ゼロ終了 |
+| 更新 | `pnpm api:update` |
+| 配線 | `pnpm verify` の `check:deps` と `test` の間、および CI の `API lock` ステップ |
+| 追加依存 | **なし**（`typescript` は既に devDependency） |
+
+`@microsoft/api-extractor` を先に試して却下した経緯・実測・仕組み・限界は
+mc-kernel の `docs/versioning.md` §7 が正本。ここでは kit にとっての意味だけ書く。
+
+**本リポジトリの API ロックの優先度は、mc-sim ほど高くない。**
 下流が devDependency のみなので、界面が揺れても出荷ビルドは壊れないためである
-（[versioning.md](./versioning.md) §3.1）。
-それでも publish 開始（plan.md §6 Step 3）までには必要で、理由は
-「`launchPlayground()` が無引数で完結する」という §2.1 の契約が、
-公開シンボル一覧の diff で守れる種類の約束だからである。
+（[versioning.md](./versioning.md) §3.1）。それでも 2 つの点で確かに効いている。
+
+**1. §2.1 の契約が型として写る。** 「`launchPlayground()` が無引数で完結する」は
+`api-lock.md` にこう記録されている:
+
+```ts
+const launchPlayground: (options?: LaunchOptions | undefined) => Effect.Effect<PlaygroundHandle, never, Playground | ClockPort | PlaygroundPorts>;
+```
+
+`options` から `?` が消える変更、あるいは `R` に新しい Tag が増える変更は、
+15 リポジトリのプレビューに定型文を強制する破壊的変更であり、そのまま diff になる。
+
+**2. 4 つの Port が `Context.Tag` である。** `InputPort` / `RendererPort` / `SimulationPort` /
+`WorldProviderPort` と `Playground` は、declaration emit の 2 分割（`Xxx_base` + 空の殻）で出る。
+api-extractor はこの `Xxx_base` を「forgotten export」として落とし、Tag 識別子文字列と
+束ねられた service 型を捨てる —— つまり Port が Port である理由が丸ごと消える。
+自前の `scripts/api-lock.ts` は「公開面が参照している非 export の宣言」を第 2 節に取り込むので、
+`'@nerima-games/mc-playground-kit/InputPort'` などの文字列がロックに残る。
+`supporting declarations: 23` の大半はこれである。
+kit の Port は将来 mc-worldgen / mc-sim / mc-render の Layer が満たすものなので、
+この文字列が黙って変わることは「実装の無い Port」を作ることに等しい。
+
+**[versioning.md](./versioning.md) §4.1 の「持たないことの約束」もここで守られる。**
+`setCameraPose` や `resolveStageOrder` が公開シンボル一覧に**現れた**ら、
+それが違反である。ロックは追加も削除も等しく diff にする。
+
+捕まえないもの: **値**（`BOOT_BUDGET_MILLIS` は `DurationMillis` としか写らないので、
+1000 → 3000 の変更はロックに映らない。versioning.md §4.2 の議論はそのまま生きており、
+守るのは `test/boot-phase.test.ts` である）、**挙動**、
+**interface / 型リテラルのメンバ順**（ソース順を保つので並べ替えは diff になる）。

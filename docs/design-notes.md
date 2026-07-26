@@ -369,7 +369,7 @@ teardown: `input → renderer → simulation → world`
 | `a self-edge is ignored rather than reported as an impossible constraint` | 同上 | 済 |
 | `a duplicate stage id resolves to its FIRST occurrence` | 同上 | 済 |
 | `surfaces a contradiction between the caller order and the caller constraints` | `test/playground.test.ts` | 済（警告が出て、かつ起動していること） |
-| **（要追加）** `the kit does not export a topological sort` | 本実装時 | 公開シンボル一覧に順序解決器が現れないこと。API ロックの仕事 |
+| `the kit does not export a topological sort` | `api-lock.md` / `pnpm api:check` | 済（公開シンボル一覧に順序解決器が現れないこと。API ロックの仕事であり、実装されている） |
 
 ---
 

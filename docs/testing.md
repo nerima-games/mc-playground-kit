@@ -261,9 +261,13 @@ kit 固有の注意: **カバレッジは Port の向こう側を測れない。
 typecheck (build + test の 2 プロジェクト)
   → lint (oxlint)
   → check:deps (依存ホワイトリスト + 循環 + Date.now() 禁止)  ← ハードゲート
+  → api:check (api-lock.md が公開 API と一致するか)          ← ハードゲート
   → test
   → coverage (閾値なし、アーティファクト化)
 ```
+
+`API lock` を `verify` 経由だけでなく独立ステップにしてあるのは、ステップ名を見ただけで
+落ちた理由が分かるようにするため（[public-api.md](./public-api.md) §7）。
 
 `check:deps` は plan.md §5.1-4「依存ホワイトリストCIを初回コミットから」の実体。
 参照実装の `check-package-dag.ts` は警告を出して常に 0 で終了していた
@@ -285,7 +289,17 @@ E2E ジョブは §2.2 の実装時に追加する。SwiftShader を使う以上
 | `100 consecutive relaunches leak neither memory nor listeners` | DN-03 | 本実装時 |
 | `a failing detach does not prevent the remaining teardown steps` | DN-04 | 失敗する fake を足す |
 | `no InputService implementation exists in this repository` | DN-01 | ソース走査 |
-| `the kit does not export a topological sort` | DN-05 | API ロック |
+| `the kit does not export a topological sort` | DN-05 | **API ロックが担当。下記** |
 | `FIRST_FRAME_DELTA_SECS equals mc-sim's` | DN-06 | mc-sim 公開時。直後にこの定数を削除する |
 | `no escape-hatch comment exists in this repository` | DN-09 | ソース走査 |
-| APIロックの diff テスト | plan.md §6 Step 0-3 | publish 開始前（必須） |
+
+**APIロックの diff はこの表から外れた。** 実装済みで、しかも vitest のテストではない。
+「コミット済みの `api-lock.md` が現在の公開面と一致するか」は `pnpm api:check` が見る
+（`pnpm verify` と CI の両方で走る）。DN-05 の「順序解決器を export しない」は、
+`resolveStageOrder` 相当が `api-lock.md` の公開シンボル一覧に**現れた**時点で
+`api:check` が落ちるので、専用テストを書かなくても守られる
+（[public-api.md](./public-api.md) §7、[versioning.md](./versioning.md) §4.1）。
+
+vitest 側の `test/api-lock.test.ts` が見ているのは生成器 `scripts/api-lock.ts` の機構そのもの
+（並びのロケール非依存性、可搬性ガード、スナップショットの往復、失敗時の diff）であり、
+16 リポジトリに byte-identical で vendor されている。

@@ -93,7 +93,9 @@ kit が `1.0.0` を出せるのは、以下がすべて満たされたとき。
    少なくとも mx-gameplay のプレビュー 3 本と mx-redstone の回路盤プレビューが
    kit で起動していること。**使われていない界面に「壊さない」と約束しても意味がない。**
 5. **APIロックファイルが 4 週間変更されていない**（plan.md §6 Step 3）。
-   ツールは未選定（plan.md §9 未決）。
+   ツール選定（plan.md §9 の未決事項）は決着し、`api-lock.md` / `scripts/api-lock.ts` /
+   `pnpm api:check` として実装済み（[public-api.md](./public-api.md) §7）。
+   **計測の起点は `api-lock.md` が最後に変わったコミット。**
 6. `domain/kernel-vocabulary.ts` が削除され、`@nerima-games/mc-kernel` を
    `dependencies` から参照している（§6）。
 7. `application/playground.ts` の `FIRST_FRAME_DELTA_SECS` が削除され、
@@ -121,6 +123,8 @@ mx-gameplay / mx-redstone よりは先**に `1.0.0` になる。
 API ロックファイルが公開シンボル一覧の diff を見る仕組みである以上、
 これらは追加を検知することで守られる。`setCameraPose` や `resolveStageOrder` が
 シンボル一覧に現れたら、それが違反である。
+**この仕組みは実際に動いている** —— `api-lock.md` と `pnpm api:check`
+（[public-api.md](./public-api.md) §7）。約束は文章だけではなくなった。
 
 ### 4.2 バジェットの変更は破壊的変更か
 
@@ -220,9 +224,14 @@ kernel の語彙を取ると真実の出所が 2 つになり、上記の削除�
 | publish ワークフロー | `.github/workflows/` に追加。タグ or changeset 起点 |
 | **E2E ワークフロー** | `.github/workflows/` に追加。SwiftShader / `workers: 1`（[testing.md](./testing.md) §2.2） |
 | カバレッジ 99% ゲート | `vitest.config.ts` + CI（[testing.md](./testing.md) §5） |
-| APIロックの diff チェック | CI ジョブとして追加 |
 
 `.gitignore` は既に `dist/` `build/` `out/` を無視するようにしてある。
+
+**APIロックの diff チェックはこの表から外れた。** 完了条件を待たずに済ませてあり、
+`pnpm api:check` が `pnpm verify` の `check:deps` と `test` の間で、また CI の
+`API lock` ステップとして走る（[public-api.md](./public-api.md) §7）。
+採用した生成器は declaration emit をメモリ上で走らせるので、上の「ビルド」行が
+埋まるのを待つ必要が無かった。
 
 ## 8. 依存の固定
 

@@ -191,7 +191,9 @@ Nix を使わない場合は Node.js 22 以上と pnpm 9.15.0（`corepack` 推�
 | `pnpm test:watch` | vitest watch |
 | `pnpm test:coverage` | カバレッジ計測（閾値は未設定。後述） |
 | `pnpm check:deps` | 依存ホワイトリスト + 循環検査 + `Date.now()` 禁止の検査 |
-| `pnpm verify` | `typecheck && lint && check:deps && test`。CI と同じ内容 |
+| `pnpm api:check` | `api-lock.md` が実際の公開 API と食い違えば非ゼロ終了（[`docs/public-api.md`](./docs/public-api.md) §7） |
+| `pnpm api:update` | `api-lock.md` を書き直す。公開面を変える PR は結果を同じ PR に含める |
+| `pnpm verify` | `typecheck && lint && check:deps && api:check && test`。CI と同じ内容 |
 
 ## 現状
 
@@ -247,7 +249,6 @@ Nix を使わない場合は Node.js 22 以上と pnpm 9.15.0（`corepack` 推�
   **E2E に FPS アサーションと起動バジェット検証は置かない** — SwiftShader 下の数値は
   実機の数値ではないため（[`docs/testing.md`](./docs/testing.md) §2.2）。
 - **`apps/preview-template/`。** consumer が自分のプレビューを作る出発点。
-- **APIロックファイル。** plan.md §6 Step 0-3。ツール未選定（§9 未決）。publish 開始までに必須。
 - **`ItemId` が暫定 `string`。** 本来は mc-kernel の `ItemType`（リテラル union、網羅性チェックつき）。
 - **ビルド／publish はまだない。** `exports` は TypeScript ソースを直接指している。
   `version` は `0.x` に留める（[`docs/versioning.md`](./docs/versioning.md)）。

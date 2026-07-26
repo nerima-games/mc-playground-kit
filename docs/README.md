@@ -66,5 +66,6 @@ plan.md §6 Step 2 は 15 リポジトリすべての完了条件に「内蔵プ
 | devDependency 専用の強制 | `scripts/check-dependency-whitelist.ts` | DN-01 |
 
 まだ無いもの: **自身の最小 E2E（起動→操作→スクリーンショット）**、実 Layer（4 つの親リポジトリが
-未公開のため Port は全部注入待ち）、`apps/preview-*/` のサンプルプレビュー、APIロックファイル。
+未公開のため Port は全部注入待ち）、`apps/preview-*/` のサンプルプレビュー。
+APIロックファイルは**ある** —— `api-lock.md` と `pnpm api:check`（[public-api.md](./public-api.md) §7）。
 `domain/kernel-vocabulary.ts` は mc-kernel 公開までの暫定ミラーであり、公開後に削除する。
