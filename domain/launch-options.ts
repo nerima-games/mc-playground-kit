@@ -49,6 +49,7 @@
  *    `override` never carried an explicit `undefined` — which rule 2 has just
  *    made legal. Hence `pick` below, which treats `undefined` as "not supplied".
  */
+import { Effect } from 'effect'
 import type { GameModule, Position, StageId, StageRegistration, WorldId } from './kernel-vocabulary'
 import { position, WorldId as makeWorldId } from './kernel-vocabulary'
 
@@ -290,7 +291,16 @@ export type StageOrderViolation = {
  */
 export const flattenStages = (
   modules: ReadonlyArray<PreviewModule>,
-): ReadonlyArray<StageRegistration> => modules.flatMap((module) => [...module.frameStages])
+): Effect.Effect<ReadonlyArray<StageRegistration>> =>
+  // `frameStages` became an Effect when the GameModule contract was fixed: a
+  // module has to be able to acquire a service in order to BUILD its stages.
+  // `PreviewModule` pins `RRegister` to `never`, so nothing a playground accepts
+  // can require anything to register — the Effect here is sequencing, not a
+  // dependency. Flattening therefore stays as small as this comment claims.
+  Effect.map(
+    Effect.all(modules.map((module) => module.frameStages)),
+    (perModule) => perModule.flat(),
+  )
 
 /**
  * Check the caller's declaration order against the caller's OWN `after` edges.
@@ -319,26 +329,25 @@ export const flattenStages = (
  */
 export const stageOrderViolations = (
   modules: ReadonlyArray<PreviewModule>,
-): ReadonlyArray<StageOrderViolation> => {
-  const stages = flattenStages(modules)
-
-  const firstIndexOf = new Map<StageId, number>()
-  stages.forEach((stage, index) => {
-    if (!firstIndexOf.has(stage.id)) {
-      firstIndexOf.set(stage.id, index)
-    }
-  })
-
-  return stages.flatMap((stage, declaredIndex) =>
-    (stage.after ?? []).flatMap((mustFollow) => {
-      const constraintIndex = firstIndexOf.get(mustFollow)
-      // Absent constraint: no edge (kernel frame.ts). Self-edge: nothing to say.
-      if (constraintIndex === undefined || mustFollow === stage.id) {
-        return []
+): Effect.Effect<ReadonlyArray<StageOrderViolation>> =>
+  Effect.map(flattenStages(modules), (stages) => {
+    const firstIndexOf = new Map<StageId, number>()
+    stages.forEach((stage, index) => {
+      if (!firstIndexOf.has(stage.id)) {
+        firstIndexOf.set(stage.id, index)
       }
-      return constraintIndex > declaredIndex
-        ? [{ stage: stage.id, mustFollow, declaredIndex, constraintIndex }]
-        : []
-    }),
-  )
-}
+    })
+
+    return stages.flatMap((stage, declaredIndex) =>
+      (stage.after ?? []).flatMap((mustFollow) => {
+        const constraintIndex = firstIndexOf.get(mustFollow)
+        // Absent constraint: no edge (kernel frame.ts). Self-edge: nothing to say.
+        if (constraintIndex === undefined || mustFollow === stage.id) {
+          return []
+        }
+        return constraintIndex > declaredIndex
+          ? [{ stage: stage.id, mustFollow, declaredIndex, constraintIndex }]
+          : []
+      }),
+    )
+  })

@@ -341,10 +341,7 @@ export const makePlayground: Effect.Effect<PlaygroundApi> = Effect.gen(function*
       yield* phase('simulation', services.simulation.spawn(resolved.spawnKit))
       yield* phase('renderer', services.renderer.attach)
       yield* phase('input', services.input.attach)
-      const stages = yield* phase(
-        'modules',
-        Effect.sync(() => flattenStages(resolved.modules)),
-      )
+      const stages = yield* phase('modules', flattenStages(resolved.modules))
       // One frame end to end, so that a handle is a LIVE preview rather than a
       // promise of one. Without this the budget would stop measuring one step
       // before the thing the developer is actually waiting for: pixels.
@@ -352,7 +349,7 @@ export const makePlayground: Effect.Effect<PlaygroundApi> = Effect.gen(function*
 
       const timings = yield* Ref.get(timingsRef)
       const budget = classifyBootTimings(timings)
-      const warnings = stageOrderViolations(resolved.modules)
+      const warnings = yield* stageOrderViolations(resolved.modules)
 
       // --- Install this launch's generation ----------------------------------
       const generation: Generation = {

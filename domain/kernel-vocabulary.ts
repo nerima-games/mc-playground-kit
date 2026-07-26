@@ -223,14 +223,25 @@ export interface StageRegistration {
 /**
  * A repository's contribution to a running game.
  *
- * `ROut` — services this module provides.
- * `E`    — errors that can occur while BUILDING those services.
- * `RIn`  — services this module needs in order to build.
+ * `ROut`      — services this module provides.
+ * `E`         — errors that can occur while BUILDING those services.
+ * `RIn`       — services this module needs in order to build.
+ * `RRegister` — services this module needs in order to REGISTER its stages.
  *
- * Reproduced from plan.md §4.1 verbatim. `domain/launch-options.ts` records why
- * a playground consumes only the `frameStages` half of this contract.
+ * `frameStages` is an Effect, not an array. plan.md §4.1 spells it as an array,
+ * and the vertical-slice spike showed that spelling does not work: with a plain
+ * array there is no context in which a module can acquire a service in order to
+ * BUILD its stages, so every service any stage touches would have to be
+ * reachable from `run` — which would put mc-sim's and mc-render's services in
+ * `FrameServices`, and mc-kernel would have to import both to name them. The
+ * tier model forbids that. See mc-kernel's `domain/frame.ts` for the full
+ * argument and for why `RRegister` is its own parameter rather than a reuse of
+ * `RIn`.
+ *
+ * `domain/launch-options.ts` records why a playground consumes only the
+ * `frameStages` half of this contract.
  */
-export interface GameModule<ROut, E, RIn> {
+export interface GameModule<ROut, E, RIn, RRegister = never> {
   readonly layers: Layer.Layer<ROut, E, RIn>
-  readonly frameStages: ReadonlyArray<StageRegistration>
+  readonly frameStages: Effect.Effect<ReadonlyArray<StageRegistration>, never, RRegister>
 }

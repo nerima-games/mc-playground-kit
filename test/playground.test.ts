@@ -129,7 +129,7 @@ const recordingStage = (id: string, target: number) =>
         ),
     }
 
-    return { seen: Ref.get(seen), reached, module: { frameStages: [registration] } satisfies PreviewModule }
+    return { seen: Ref.get(seen), reached, module: { frameStages: Effect.succeed([registration]) } satisfies PreviewModule }
   })
 
 // ---------------------------------------------------------------------------
@@ -286,7 +286,7 @@ describe('frames', () => {
       const reached = yield* Deferred.make<void>()
 
       const exploding: PreviewModule = {
-        frameStages: [
+        frameStages: Effect.succeed([
           {
             id: StageId('preview:explodes'),
             run: () =>
@@ -300,7 +300,7 @@ describe('frames', () => {
                 ),
               ),
           },
-        ],
+        ]),
       }
 
       const handle = yield* launchPlayground({ modules: [exploding] }).pipe(Effect.provide(fakes.layer))
@@ -533,7 +533,7 @@ describe('stage order warnings', () => {
     Effect.gen(function* () {
       const fakes = yield* makeFakes()
       const handle = yield* launchPlayground({
-        modules: [{ frameStages: [] }],
+        modules: [{ frameStages: Effect.succeed([]) }],
       }).pipe(Effect.provide(fakes.layer))
 
       expect(handle.stageOrderWarnings).toStrictEqual([])
@@ -556,7 +556,7 @@ describe('stage order warnings', () => {
       })
 
       const handle = yield* launchPlayground({
-        modules: [{ frameStages: [noop('render', ['sim']), noop('sim')] }],
+        modules: [{ frameStages: Effect.succeed([noop('render', ['sim']), noop('sim')]) }],
       }).pipe(Effect.provide(fakes.layer))
 
       expect(handle.stageOrderWarnings).toHaveLength(1)

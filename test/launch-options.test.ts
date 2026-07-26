@@ -30,7 +30,9 @@ const stage = (id: string, after?: ReadonlyArray<string>): StageRegistration => 
   run: (_dt: DeltaTimeSecs) => Effect.void,
 })
 
-const moduleOf = (...stages: ReadonlyArray<StageRegistration>): PreviewModule => ({ frameStages: stages })
+const moduleOf = (...stages: ReadonlyArray<StageRegistration>): PreviewModule => ({
+  frameStages: Effect.succeed(stages),
+})
 
 describe('defaults', () => {
   it.effect('launchPlayground() with NO options is a complete configuration', () =>
@@ -182,8 +184,8 @@ describe('merging', () => {
 
 describe('stage order is CHECKED, never resolved', () => {
   it.effect('flattens modules in declaration order, stages within a module in declaration order', () =>
-    Effect.sync(() => {
-      const flattened = flattenStages([
+    Effect.gen(function* () {
+      const flattened = yield* flattenStages([
         moduleOf(stage('a'), stage('b')),
         moduleOf(stage('c')),
       ])
@@ -193,16 +195,16 @@ describe('stage order is CHECKED, never resolved', () => {
   )
 
   it.effect('a correctly ordered set of stages produces no warnings', () =>
-    Effect.sync(() => {
+    Effect.gen(function* () {
       const modules = [moduleOf(stage('input'), stage('sim', ['input']), stage('render', ['sim', 'input']))]
 
-      expect(stageOrderViolations(modules)).toStrictEqual([])
+      expect(yield* stageOrderViolations(modules)).toStrictEqual([])
     }),
   )
 
   it.effect('reports a stage declared BEFORE something it said it must follow', () =>
-    Effect.sync(() => {
-      const violations = stageOrderViolations([moduleOf(stage('render', ['sim']), stage('sim'))])
+    Effect.gen(function* () {
+      const violations = yield* stageOrderViolations([moduleOf(stage('render', ['sim']), stage('sim'))])
 
       expect(violations).toHaveLength(1)
       expect(String(violations[0]?.stage)).toBe('render')
@@ -213,10 +215,10 @@ describe('stage order is CHECKED, never resolved', () => {
   )
 
   it.effect('catches an ordering violation that spans two modules', () =>
-    Effect.sync(() => {
+    Effect.gen(function* () {
       // The interesting case: neither module is wrong on its own. Only the order
       // the caller listed them in is.
-      const violations = stageOrderViolations([
+      const violations = yield* stageOrderViolations([
         moduleOf(stage('redstone:tick', ['gameplay:fluids'])),
         moduleOf(stage('gameplay:fluids')),
       ])
@@ -226,33 +228,33 @@ describe('stage order is CHECKED, never resolved', () => {
   )
 
   it.effect('an `after` naming an ABSENT stage is not a violation — kernel says the edge is absent', () =>
-    Effect.sync(() => {
+    Effect.gen(function* () {
       // mc-kernel/domain/frame.ts:46-54. This is the common case here: a preview
       // is by construction a subset of the game, so "run me after input, if
       // there is input" must stay legal in a preview that has no input stage.
-      expect(stageOrderViolations([moduleOf(stage('gameplay:mining', ['input', 'physics']))])).toStrictEqual([])
+      expect(yield* stageOrderViolations([moduleOf(stage('gameplay:mining', ['input', 'physics']))])).toStrictEqual([])
     }),
   )
 
   it.effect('a self-edge is ignored rather than reported as an impossible constraint', () =>
-    Effect.sync(() => {
-      expect(stageOrderViolations([moduleOf(stage('loop', ['loop']))])).toStrictEqual([])
+    Effect.gen(function* () {
+      expect(yield* stageOrderViolations([moduleOf(stage('loop', ['loop']))])).toStrictEqual([])
     }),
   )
 
   it.effect('a duplicate stage id resolves to its FIRST occurrence', () =>
-    Effect.sync(() => {
+    Effect.gen(function* () {
       // What a duplicate id MEANS is mc-compose's call, not a harness's. This
       // pins the harness's behaviour so the ambiguity is at least deterministic.
-      expect(stageOrderViolations([moduleOf(stage('x'), stage('y', ['x']), stage('x'))])).toStrictEqual([])
+      expect(yield* stageOrderViolations([moduleOf(stage('x'), stage('y', ['x']), stage('x'))])).toStrictEqual([])
     }),
   )
 
   it.effect('no modules, no stages, no warnings', () =>
-    Effect.sync(() => {
-      expect(flattenStages([])).toStrictEqual([])
-      expect(stageOrderViolations([])).toStrictEqual([])
-      expect(stageOrderViolations([moduleOf()])).toStrictEqual([])
+    Effect.gen(function* () {
+      expect(yield* flattenStages([])).toStrictEqual([])
+      expect(yield* stageOrderViolations([])).toStrictEqual([])
+      expect(yield* stageOrderViolations([moduleOf()])).toStrictEqual([])
     }),
   )
 })
