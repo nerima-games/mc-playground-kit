@@ -34,20 +34,71 @@ kit の場合これは「テスト green **かつ** 最小 E2E（起動→操作
 （`tsconfig.preview.json`）と `pnpm lint` と `pnpm check:deps` の対象には入っている。
 **「起動 → 操作」は満たした。「スクリーンショット」はまだである。**
 
-### 2.1 スクリーンショットの半分が無い理由 —— 4 つ、正確に
+### 2.1 スクリーンショットの半分が無い理由 —— **2026-07-28 に測り直した。4 つのうち 3 つは消えている**
 
-1. **本物の Port Layer が無い。** `application/preview-ports.ts` は 4 つの
-   `Context.Tag` とサービス型だけで、`Layer.succeed` が**意図的に 1 つも無い**。
-   本物には mc-worldgen / mc-sim / mc-render の publish と pin が要る
-   （plan.md §6 Step 3）。何も publish されていない。
-2. **ブラウザが要る。** スクリーンショットはピクセルの写真であり、
-   mc-render は THREE.js も `lib.DOM` も出荷していない。
-3. **`@playwright/test` が組織のどのリポジトリの依存にも入っていない。**
-   `playwright.config.ts` も `e2e/` も無い。足すのは package.json の 1 行ではなく、
-   CI 実行時間についての決定である。
-4. **ベースライン方針が無い。**「同じ絵とは何か」の合意が無いスクリーンショットテストは、
-   フォント更新で落ちるテストである。plan.md §3.10 は Playwright が SwiftShader 上で
-   動くと記録しているので、ベースラインを開発機から取ることもできない。
+かつてここには 4 つの理由が並んでいた。**そのうち 3 つはもう成り立たない。**
+そして残っていなかった 5 つ目が、実際には現在の唯一のハードブロッカーである。
+
+| かつての理由 | いまの状態 |
+| --- | --- |
+| 1. 本物の Port Layer が無い | **半分は成立可能になった。** `RendererPort` と `InputPort` は mc-render の実物で埋められる（`makeWorldRenderer` / `InputService` は実装済み）。`WorldProviderPort`（mc-worldgen）と `SimulationPort`（mc-sim）は依然 fake しか無い |
+| 2. ブラウザが要る。mc-render は THREE.js も `lib.DOM` も出荷していない | **消えた。** mc-render は `application/three-surface.ts` で THREE を**構造的に**受け取り、`application/world-renderer.ts` が実際に WebGL2 コンテキストを取得する。`lib.DOM` を出荷しないのは今も真だが、それは**ホストが `three` と canvas を渡す**設計だからで、障害ではない |
+| 3. `@playwright/test` が組織のどのリポジトリにも無い。`playwright.config.ts` も `e2e/` も無い | **明確に偽になった。** mc-compose に両方ある —— `playwright.config.ts`（Chromium + SwiftShader、`webServer` に vite、port 5181、`retries: 0`）と `e2e/smoke.e2e.ts` が動いている |
+| 4. ベースライン方針が無い | **ほぼ消えた。** mc-render の [docs/testing.md](../../mc-render/docs/testing.md) §2.5 が実測で片付けている —— SwiftShader は逐次・6 並列・Chromium 147/148 をまたいで **15 枚が同一 sha256**、許容差は **0 でよい**。加えて「rAF ループを撮るな」「`UNMASKED_RENDERER_WEBGL` が SwiftShader でなければ skip」という 2 つの拘束条件も出ている |
+
+#### 5. 実際に残っている唯一のハードブロッカー: **kit の `check:deps` が通さない**（実測）
+
+ブラウザ E2E を書くには `apps/` の下から `@nerima-games/mc-render` を import する必要がある。
+**それを入れると `pnpm check:deps` がハード失敗する。** 実測（2026-07-28、入れて確認して戻した）:
+
+```
+check-dependency-whitelist: 1 violation(s):
+  apps/preview-harness/options.ts:177 [undeclared-dependency] imports @nerima-games/mc-render,
+  which is declared in neither "dependencies" nor "devDependencies" of package.json.
+```
+
+**そして package.json に足すことは組織が禁じている。**
+`mc-dev-meta/scripts/check-repoint.ts` のヘッダが理由を述べている ——
+16 リポジトリはそれぞれ自分の CI でも単独ビルドされ、そこでは `workspace:*` が解決しない。
+publish 前の兄弟を package.json に書けば、kit 自身の CI の `pnpm install` が壊れる。
+
+**mc-compose はこの穴をすでに塞いでいる。** あちらの
+`scripts/check-dependency-whitelist.ts` には `devServerResolved` と `UNPUBLISHED_ROOTS` が
+あり、「未 publish ルート（`apps/`）のファイルは、vite alias で解決される兄弟を
+package.json 宣言なしに import してよい」という条項になっている。
+**kit のコピーにはその機構が無い**（`grep devServerResolved` が 0 件）。
+
+つまりこれは kit の中で完結する配線作業ではなく、
+**vendor されているゲートスクリプトを新しい版に揃える作業**である。
+当該ファイルは自身のヘッダで「フェンスより下は 16 リポジトリに byte-for-byte でコピーされる」
+と宣言しているので、kit だけ先に書き換えると**意図的に同一化してある資産が分岐する。**
+
+**したがって着手の前に決めるべきことは 1 つ**で、それは kit の決定ではない:
+
+> `devServerResolved` / `UNPUBLISHED_ROOTS` を持つ新しい
+> `check-dependency-whitelist.ts` を、mc-dev-meta 主導で kit（および他の該当リポジトリ）へ
+> 同期するか。
+
+同期さえ済めば、残りは実際に配線作業である。必要なものは
+vite（sibling alias、mc-compose の `vite.config.ts` がそのまま雛形）、
+`@playwright/test`、`three`、`lib: ["DOM"]` を持つ**新しい** tsconfig プロジェクト
+（`tsconfig.preview.json` は DOM を入れないことが設計なので、そこには足さないこと）。
+
+#### この E2E が主張できること / できないこと（同期後に書く人へ）
+
+上の表 1 が残しているのは「4 Port のうち 2 つは依然 fake」である。
+**それを黙って混ぜてはならない。** 絵は mc-compose と同じく**空 1 色**になる ——
+ワールドデータが無いので、本物のレンダラに描くものが無い。
+
+| 主張できる | 主張できない |
+| --- | --- |
+| kit の起動列がブラウザで 1 秒バジェットに収まる（実 DOM・実 WebGL 込み） | 何かが**見えている**こと |
+| mc-render の**本物の**レンダラが WebGL2 コンテキストを取得した（mc-compose smoke #1 と同じ、自己充足しない 2 つの assertion で） | ワールド生成・シミュレーションが正しいこと（fake である） |
+| 実 `window` に登録したリスナが teardown で**全部**外れる（DN-03/DN-04。ここが kit 固有） | スクリーンショットの**内容**の回帰（空 1 色に回帰は無い） |
+
+3 列目が示すとおり、**スクリーンショットは撮れるが比較の意味はまだ薄い。**
+比較が意味を持つのは mc-worldgen / mc-meshing が alias 集合に入った日であり、
+それは表 1 の行 1 の残り半分と同じ日である。
 
 ### 2.2 それでも今日測れるもの ——「1 秒で確実に起動する」
 
@@ -87,7 +138,16 @@ E2E はそこに差し込む。現在のプレビューはその**代わりで�
 したがって kit も mc-sim と同じ 2 段階になる。
 
 1. **いま**: Node の決定論テストで順序・後始末・再入可能性・バジェット算術を固定する（達成済み）
-2. **mc-worldgen / mc-sim / mc-render が揃ってから**: 実 Layer を注入した最小 E2E を書く（完了条件）
+2. ~~**mc-worldgen / mc-sim / mc-render が揃ってから**~~ → **3 段になった**（§2.1 の実測による）
+
+   | 段 | 条件 | 何が書けるか |
+   | --- | --- | --- |
+   | 2a | `check-dependency-whitelist.ts` が `devServerResolved` 付きの版に同期される | **mc-render だけを実 Layer にした** E2E。起動・操作・teardown・コンテキスト取得。スクリーンショットは撮れるが空 1 色 |
+   | 2b | mc-worldgen / mc-meshing が alias 集合に入る | 絵の**中身**についての主張。ここで初めてスクリーンショット比較が意味を持つ |
+   | 2c | 全 4 親が publish される | `application/preview-ports.ts` の 4 Port すべてが実 Layer（完了条件） |
+
+   **2a は mc-render の publish を待たない。** これが 2026-07-28 の実測でいちばん変わった点で、
+   かつては「4 つ揃うまで何も書けない」と読める書き方をしていた。
 
 この順序は避けられない。
 

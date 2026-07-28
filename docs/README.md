@@ -65,7 +65,17 @@ plan.md §6 Step 2 は 15 リポジトリすべての完了条件に「内蔵プ
 | stage 順序の**検査**（解決ではない） | `domain/launch-options.ts` | DN-05 |
 | devDependency 専用の強制 | `scripts/check-dependency-whitelist.ts` | DN-01 |
 
-まだ無いもの: **自身の最小 E2E（起動→操作→スクリーンショット）**、実 Layer（4 つの親リポジトリが
-未公開のため Port は全部注入待ち）、`apps/preview-*/` のサンプルプレビュー。
+まだ無いもの: **自身の最小 E2E（起動→操作→スクリーンショット）**、実 Layer、
+`apps/preview-*/` のサンプルプレビュー。
+
+**2026-07-28: E2E が無い理由が変わった。** かつては「4 つの親リポジトリが未公開のため
+Port は全部注入待ち」と書いていたが、**mc-render は実装が進み、`RendererPort` と
+`InputPort` は実物で埋められる**（`makeWorldRenderer` / `InputService`）。
+E2E 環境の不在も解消している（mc-compose に動く Playwright ハーネスがある）。
+**現在の唯一のハードブロッカーは `pnpm check:deps` である** ——
+`apps/` から `@nerima-games/mc-render` を import すると `undeclared-dependency` で落ち、
+package.json への宣言は組織が禁じている。mc-compose の新しいゲート版が持つ
+`devServerResolved` 条項が kit のコピーに無いのが原因で、これは kit 内では閉じない。
+実測と手順は [testing.md](./testing.md) §2.1。
 APIロックファイルは**ある** —— `api-lock.md` と `pnpm api:check`（[public-api.md](./public-api.md) §7）。
 `domain/kernel-vocabulary.ts` は mc-kernel 公開までの暫定ミラーであり、公開後に削除する。
