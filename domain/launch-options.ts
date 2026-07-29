@@ -50,8 +50,8 @@
  *    made legal. Hence `pick` below, which treats `undefined` as "not supplied".
  */
 import { Effect } from 'effect'
-import type { GameModule, Position, StageId, StageRegistration, WorldId } from "@nerima-games/mc-kernel"
-import { position, WorldId as makeWorldId } from "@nerima-games/mc-kernel"
+import type { GameModule, Position, StageId, StageRegistration, WorldId } from './kernel-vocabulary'
+import { position, WorldId as makeWorldId } from './kernel-vocabulary'
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -124,7 +124,7 @@ export const DEFAULT_FLAT_WORLD: FlatWorldSpec = {
  *
  * It should be mc-kernel's `ItemType` — a literal union with exhaustiveness
  * checking — and will be, once kernel is published and
- * `@nerima-games/mc-kernel` is deleted. mc-sim carries the same provisional
+ * `domain/kernel-vocabulary.ts` is deleted. mc-sim carries the same provisional
  * `string` for the same reason; the two must be repointed together.
  */
 export type ItemId = string

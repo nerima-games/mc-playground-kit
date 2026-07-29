@@ -9,7 +9,7 @@
  *
  * TEMPORARY: nothing is published. plan.md §6 Step 3 publishes bottom-up, so
  * `@nerima-games/mc-worldgen`, `-sim` and `-render` cannot be imported yet (see
- * `@nerima-games/mc-kernel`). Ports let the harness be written, typechecked
+ * `domain/kernel-vocabulary.ts`). Ports let the harness be written, typechecked
  * and tested in full today, against fakes, and repointed at the real packages
  * later by writing Layers — not by editing this repository's logic.
  *
@@ -55,7 +55,7 @@
  */
 import { Context, Effect } from 'effect'
 import type { FlatWorldSpec, SpawnKit } from '../domain/launch-options'
-import type { CameraPoseSnapshot, DeltaTimeSecs } from "@nerima-games/mc-kernel"
+import type { CameraPoseSnapshot, DeltaTimeSecs } from '../domain/kernel-vocabulary'
 
 // ---------------------------------------------------------------------------
 // mc-worldgen
