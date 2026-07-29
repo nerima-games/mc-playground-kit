@@ -99,7 +99,7 @@ export const DurationMillis = Brand.refined<DurationMillis>(
  * A NON-FINITE interval reaches the same floor, and for the same reason. Note
  * that this function takes bare `number`s, not `MonotonicTimeSecs`: a NARROWER
  * mirror of the Clock Port satisfies the same Tag at run time with fields
- * reading `undefined` (`domain/kernel-vocabulary.ts`), and `undefined -
+ * reading `undefined` (`@nerima-games/mc-kernel`), and `undefined -
  * undefined` is `NaN`. `DurationMillis` is a `Brand.refined` constructor
  * requiring `Number.isFinite(value) && value >= 0`, so before this guard a
  * broken reading THREW — inside `phase()`, inside a `launch` whose signature is

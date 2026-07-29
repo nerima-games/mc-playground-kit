@@ -44,7 +44,7 @@ import {
 } from '../../application/preview-ports'
 import { BOOT_PHASE_ORDER, type BootPhase, type PhaseTiming } from '../../domain/boot-phase'
 import type { PreviewModule, StageOrderViolation } from '../../domain/launch-options'
-// `domain/kernel-vocabulary.ts` is NOT re-exported from `index.ts` — a consumer
+// `@nerima-games/mc-kernel` is NOT re-exported from `index.ts` — a consumer
 // must take that vocabulary from mc-kernel, and a dev app inside this repository
 // is the only thing that may reach for the local mirror directly. See the
 // header of that file, and index.ts:44-51.
@@ -56,7 +56,7 @@ import {
   position,
   StageId,
   type CameraPoseSnapshot,
-} from '../../domain/kernel-vocabulary'
+} from "@nerima-games/mc-kernel"
 import { scenarioFor, stepAt, type Command, type PortFixture, type ScenarioName } from './script'
 
 const FROZEN_WALL_CLOCK = EpochMillis(1_700_000_000_000)

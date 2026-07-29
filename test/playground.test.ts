@@ -40,7 +40,7 @@ import {
   position,
   type CameraPoseSnapshot,
   type StageRegistration,
-} from '../domain/kernel-vocabulary'
+} from "@nerima-games/mc-kernel"
 import { InputPort, RendererPort, SimulationPort, WorldProviderPort } from '../application/preview-ports'
 import { FIRST_FRAME_DELTA_SECS, Playground, PlaygroundLayer, launchPlayground } from '../application/playground'
 
