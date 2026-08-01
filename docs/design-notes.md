@@ -615,10 +615,10 @@ fake clock は Port が「作業した」ぶんだけ進む `Ref`）。壁時計
 ### 強制の実体
 
 `scripts/check-dependency-whitelist.ts` の `findBannedTimeSources`
-（`Date.now()` / `new Date()` / `performance.now()` の 3 つ）。**oxlint.json ではない** —
+（`Date.now()` / `new Date()` / `performance.now()` の 3 つ）。**.oxlintrc.json ではない** —
 oxlint 0.12 は `no-restricted-syntax` も `no-restricted-properties` も実装しておらず、
 `no-restricted-globals` は一覧に出るが実装されていない（mc-kernel で 0.12.0 に対し実測確認済み）。
-oxlint が該当ルールを実装したら oxlint.json へ移す。
+oxlint が該当ルールを実装したら .oxlintrc.json へ移す。
 
 Clock Port の実装アダプタだけが `mc-kernel-allow-time-source` コメントで除外される。
 **そのアダプタは本リポジトリには無い**（kit は `ClockPort` を要求する側）。
