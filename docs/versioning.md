@@ -92,10 +92,11 @@ kit が `1.0.0` を出せるのは、以下がすべて満たされたとき。
 4. **下流が実際に消費して契約を確認している。**
    少なくとも mx-gameplay のプレビュー 3 本と mx-redstone の回路盤プレビューが
    kit で起動していること。**使われていない界面に「壊さない」と約束しても意味がない。**
-5. **APIロックファイルが 4 週間変更されていない**（plan.md §6 Step 3）。
-   ツール選定（plan.md §9 の未決事項）は決着し、`api-lock.md` / `scripts/api-lock.ts` /
-   `pnpm api:check` として実装済み（[public-api.md](./public-api.md) §7）。
-   **計測の起点は `api-lock.md` が最後に変わったコミット。**
+5. **1.0.0 への昇格は、日数計測ベースの自動ゲートではなく maintainer(take)の裁量判断による**
+   （[RELEASE_STANDARD.md §4.2](https://github.com/nerima-games/.github/blob/main/RELEASE_STANDARD.md#42-新しい昇格ポリシー人間による裁量判断)）。
+   従来想定されていた「`api-lock.md` が 4 週間変更されなければ凍結」という freeze-clock は
+   `api-lock.md` 自体の廃止に伴い廃止された。定量的な代替基準(変更なし日数・利用実績件数など)も
+   導入しない。判断材料は都度異なってよく、事前にすべて明文化することは求めない。
 6. `domain/kernel-vocabulary.ts` が削除され、`@nerima-games/mc-kernel` を
    `dependencies` から参照している（§6）。
 7. `application/playground.ts` の `FIRST_FRAME_DELTA_SECS` が削除され、
@@ -120,11 +121,10 @@ mx-gameplay / mx-redstone よりは先**に `1.0.0` になる。
 | `CameraPoseSnapshot` を書き戻す口を作らない | DN-08 / plan.md §5.1-2 |
 
 **下の 4 つは「界面の形」ではなく「持たないことの約束」である。**
-API ロックファイルが公開シンボル一覧の diff を見る仕組みである以上、
-これらは追加を検知することで守られる。`setCameraPose` や `resolveStageOrder` が
-シンボル一覧に現れたら、それが違反である。
-**この仕組みは実際に動いている** —— `api-lock.md` と `pnpm api:check`
-（[public-api.md](./public-api.md) §7）。約束は文章だけではなくなった。
+`api-lock.md` / `scripts/api-lock.ts` / `pnpm api:check` という自動 API スナップショット/diff
+ツールは org 標準として廃止した（[API_STANDARD.md §4](https://github.com/nerima-games/.github/blob/main/API_STANDARD.md)）。
+`setCameraPose` や `resolveStageOrder` のような約束していない公開シンボルが追加されていないかは、
+以降 maintainer のレビュー(自己レビュー含む)で守る。
 
 ### 4.2 バジェットの変更は破壊的変更か
 
@@ -227,11 +227,9 @@ kernel の語彙を取ると真実の出所が 2 つになり、上記の削除�
 
 `.gitignore` は既に `dist/` `build/` `out/` を無視するようにしてある。
 
-**APIロックの diff チェックはこの表から外れた。** 完了条件を待たずに済ませてあり、
-`pnpm api:check` が `pnpm verify` の `check:deps` と `test` の間で、また CI の
-`API lock` ステップとして走る（[public-api.md](./public-api.md) §7）。
-採用した生成器は declaration emit をメモリ上で走らせるので、上の「ビルド」行が
-埋まるのを待つ必要が無かった。
+**APIロックの diff チェックはこの表にはもう無い。** `api-lock.md` / `scripts/api-lock.ts` /
+`pnpm api:check` は org 標準の移行に伴い廃止した。`pnpm verify` は
+`typecheck && lint && test` の3段構成に確定している（[TEST_STANDARD.md §1](https://github.com/nerima-games/.github/blob/main/TEST_STANDARD.md)）。
 
 ## 8. 依存の固定
 

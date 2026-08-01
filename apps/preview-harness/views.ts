@@ -20,12 +20,12 @@ import {
   describeBootVerdict,
   DurationMillis,
   type BootPhase,
-} from '../../domain/boot-phase'
+} from '../../src/domain/boot-phase'
 import {
   DEFAULT_FLAT_WORLD,
   DEFAULT_SPAWN_KIT,
   normalizeLaunchOptions,
-} from '../../domain/launch-options'
+} from '../../src/domain/launch-options'
 import { describeCommand, scenarioFor, scenarioLength, type ScenarioName } from './script'
 import type { HarnessView } from './harness'
 import {
