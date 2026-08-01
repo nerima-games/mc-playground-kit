@@ -192,6 +192,8 @@ yield* running.stop                    // 冪等。所有 canvas/RAF/listener �
 
 呼び出し側から渡した canvas は削除せず、kit が生成した canvas だけを削除する。
 起動途中で失敗した場合も、登録済み cleanup と所有 canvas を rollback する。
+`frame` Effect は完了後にだけ次の RAF を予約するため、遅いフレーム同士は重ならない。
+停止時は実行中の frame fiber を interrupt して release を待ってから runtime と DOM 資源を解放する。
 
 ## 開発
 

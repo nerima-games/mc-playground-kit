@@ -431,6 +431,10 @@ export const makeBrowserPreview: (
 cleanup は generation が所有し、開始失敗時にも逆順で rollback される。呼び出し側から渡された canvas
 は停止時に DOM から除去しない。
 
+`BrowserPreviewRuntime.frame` は直列に実行され、完了するまで次の RAF を予約しない。`stop` / `restart` /
+外部 abort は実行中の frame fiber を interrupt し、その release 完了後に runtime の `stop` と cleanup を
+実行する。したがって adapter は非同期の frame Effect を返しても、解放済み renderer/input と競合しない。
+
 `InputPort` に実装が無いことについては [responsibility.md](./responsibility.md) §3.1。
 
 ## 7. 参照実装との照合

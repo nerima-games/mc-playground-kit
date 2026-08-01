@@ -1,5 +1,5 @@
 /* oxlint-disable curly, func-names, init-declarations, max-statements, no-magic-numbers, no-ternary, no-undefined, prefer-const, sort-keys -- Lifecycle orchestration is intentionally kept linear; splitting it obscures rollback order. */
-import { Effect, Either, Option, Ref } from 'effect'
+import { Effect, Either, Fiber, Option, Ref } from 'effect'
 
 export type BrowserPreviewSurface = {
   readonly container: HTMLElement
@@ -110,6 +110,7 @@ export const makeBrowserPreview = (
       const cleanups: Array<() => void> = []
       const rollbackFailures: Array<unknown> = []
       let runtime: BrowserPreviewRuntime | undefined
+      let frameFiber: Fiber.RuntimeFiber<void, never> | undefined
       let requestId: number | undefined
       let previousTimestamp: number | undefined
       let stopped = false
@@ -124,7 +125,15 @@ export const makeBrowserPreview = (
         if (stopped) return
         stopped = true
         controller.abort()
-        if (requestId !== undefined) scheduler.cancel(requestId)
+        if (requestId !== undefined) {
+          scheduler.cancel(requestId)
+          requestId = undefined
+        }
+        if (frameFiber !== undefined) {
+          const runningFrame = frameFiber
+          frameFiber = undefined
+          yield* Fiber.interrupt(runningFrame)
+        }
         if (runtime !== undefined) {
           yield* Effect.match(runtime.stop, {
             onFailure: (cause) => { rollbackFailures.push(cause) },
@@ -170,11 +179,16 @@ export const makeBrowserPreview = (
             ? 0
             : Math.max(0, (timestamp - previousTimestamp) / 1_000)
           previousTimestamp = timestamp
-          Effect.runFork(Effect.match(runtime.frame(timestamp, deltaSeconds), {
-            onFailure: () => Effect.runFork(mutex.withPermits(1)(stopUnlocked)),
-            onSuccess: () => undefined,
+          frameFiber = Effect.runFork(Effect.match(runtime.frame(timestamp, deltaSeconds), {
+            onFailure: () => {
+              frameFiber = undefined
+              Effect.runFork(mutex.withPermits(1)(stopUnlocked))
+            },
+            onSuccess: () => {
+              frameFiber = undefined
+              if (!stopped) requestId = scheduler.request(tick)
+            },
           }))
-          requestId = scheduler.request(tick)
         }
         requestId = scheduler.request(tick)
       }

@@ -1,6 +1,6 @@
 /* oxlint-disable curly, func-names, max-statements, no-magic-numbers, no-undefined, no-use-before-define, sort-imports, sort-keys -- Test fixtures favor direct state assertions over production-style decomposition. */
 import { describe, expect, it } from '@effect/vitest'
-import { Effect, Either, Option } from 'effect'
+import { Deferred, Effect, Either, Option } from 'effect'
 import {
   makeBrowserPreview,
   type BrowserFrameScheduler,
@@ -82,6 +82,7 @@ describe('browser preview', () => {
       expect(dom.children).toHaveLength(1)
 
       animation.runNext(100)
+      yield* Effect.yieldNow()
       animation.runNext(116)
       yield* Effect.yieldNow()
       expect(frames).toStrictEqual([[100, 0], [116, 0.016]])
@@ -100,6 +101,70 @@ describe('browser preview', () => {
       expect(dom.children).toHaveLength(0)
       expect(animation.callbacks.size).toBe(0)
       expect(animation.cancelled.length).toBeGreaterThanOrEqual(2)
+    }),
+  )
+
+  it.effect('serializes asynchronous frames instead of overlapping RAF work', () =>
+    Effect.gen(function* () {
+      const dom = fakeDom()
+      const animation = fakeScheduler()
+      const firstFrame = yield* Deferred.make<void>()
+      const frames: Array<number> = []
+      const preview = yield* makeBrowserPreview({
+        container: dom.container,
+        createCanvas: () => dom.canvas,
+        scheduler: animation.scheduler,
+        startRuntime: () => Effect.succeed({
+          frame: (timestamp) => Effect.gen(function* () {
+            frames.push(timestamp)
+            if (timestamp === 100) yield* Deferred.await(firstFrame)
+          }),
+          stop: Effect.void,
+        }),
+      })
+
+      yield* preview.start
+      animation.runNext(100)
+      yield* Effect.yieldNow()
+      expect(frames).toStrictEqual([100])
+      expect(animation.callbacks.size).toBe(0)
+
+      yield* Deferred.succeed(firstFrame, undefined)
+      yield* Effect.yieldNow()
+      expect(animation.callbacks.size).toBe(1)
+      animation.runNext(116)
+      yield* Effect.yieldNow()
+      expect(frames).toStrictEqual([100, 116])
+      yield* preview.stop
+    }),
+  )
+
+  it.effect('interrupts an active frame before releasing runtime resources', () =>
+    Effect.gen(function* () {
+      const dom = fakeDom()
+      const animation = fakeScheduler()
+      const neverFinish = yield* Deferred.make<void>()
+      const events: Array<string> = []
+      const preview = yield* makeBrowserPreview({
+        container: dom.container,
+        createCanvas: () => dom.canvas,
+        scheduler: animation.scheduler,
+        startRuntime: () => Effect.succeed({
+          frame: () => Effect.acquireUseRelease(
+            Effect.sync(() => { events.push('frame:start') }),
+            () => Deferred.await(neverFinish),
+            () => Effect.sync(() => { events.push('frame:release') }),
+          ),
+          stop: Effect.sync(() => { events.push('runtime:stop') }),
+        }),
+      })
+
+      const handle = yield* preview.start
+      animation.runNext(100)
+      yield* Effect.yieldNow()
+      yield* handle.stop
+      expect(events).toStrictEqual(['frame:start', 'frame:release', 'runtime:stop'])
+      expect(animation.callbacks.size).toBe(0)
     }),
   )
 

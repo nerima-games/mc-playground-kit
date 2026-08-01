@@ -124,6 +124,9 @@ plan.md §3.10 は kit を「**最も丁寧に作る**」部分と呼ぶ。理�
 | KIT-2 | 1 回の launch でモジュールの `frameStages` が 2 回評価される。2 回目は `phase()` の外で、`stageOrderWarnings` はそちらから導かれる | `REGRESSION: one launch evaluates a module's frameStages exactly ONCE` / `REGRESSION: the warnings describe the stages the PUMP runs, not a second registration` |
 | KIT-3 | `elapsedMillis` が非有限入力で throw する。doc は負値の話しかしていない | `test/boot-phase.test.ts` `REGRESSION: a non-finite reading is a zero, not a defect that kills the launch` |
 
+ブラウザ lifecycle は `test/browser-preview.test.ts` で、非同期 frame の直列化と、active frame の
+release が runtime stop より先に完了する teardown 順序を固定している。
+
 `--stats` の `STALE-STOP` は「superseded stop が触った Port」を `(none)` と出し、
 `DOUBLE-REGISTRATION` は 1 launch あたり 1 評価を出す。
 どちらかが変わったらこの表の行が戻ってきたということである。
