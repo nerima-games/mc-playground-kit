@@ -1,0 +1,141 @@
+{
+  "$schema": "https://oxc-project.github.io/oxc/schema/linter.json",
+  // oxlint is the ONLY lint/format configuration in this repository.
+  // There is deliberately no prettier, no biome and no .editorconfig.
+  //
+  // NOTE on the `Date.now()` ban: oxlint 0.12 does not implement `no-restricted-syntax` or
+  // `no-restricted-properties`, and while `no-restricted-globals` is listed by
+  // `oxlint --rules` it is not implemented either (no checkmark). Verified empirically
+  // against oxlint 0.12.0: a file containing `Date.now()` produces 0 diagnostics under all
+  // three rules. The org-standard `scripts/check-dependency-whitelist.ts` that used to
+  // enforce this has been retired (DEPENDENCY_POLICY.md); until oxlint implements
+  // `no-restricted-syntax`, this ban is not machine-enforced here and relies on review.
+  //
+  // Cross-repository (`@nerima-games/*`) import restrictions are enforced below via
+  // `no-restricted-imports`, per DEPENDENCY_POLICY.md's Tier2 rules for this repository.
+  "env": {
+    "es2022": true,
+    "node": true
+  },
+  "settings": {
+    "typescript": {
+      "version": "5.9"
+    }
+  },
+  "plugins": [],
+  "categories": {
+    "correctness": "warn",
+    "suspicious": "warn",
+    "perf": "warn",
+    "style": "warn",
+    "restriction": "warn"
+  },
+  "rules": {
+    // TypeScript-specific rules
+    // Prefer `type` over `interface` for pure data types (Schema.Struct pattern).
+    // Exception in this repo: the plan.md §4.1 contracts (StageRegistration, GameModule)
+    // are reproduced verbatim as `interface` so the spec and the code read identically.
+    "@typescript-eslint/consistent-type-definitions": ["warn", "type"],
+    "@typescript-eslint/no-explicit-any": "off",
+    "@typescript-eslint/no-unused-vars": "warn",
+    "@typescript-eslint/no-floating-promises": "warn",
+    "@typescript-eslint/no-misused-new": "warn",
+    "@typescript-eslint/no-unnecessary-type-assertion": "warn",
+    "@typescript-eslint/no-var-requires": "warn",
+    "@typescript-eslint/prefer-enum-initializers": "warn",
+    "@typescript-eslint/prefer-for-of": "warn",
+    "@typescript-eslint/prefer-literal-enum-member": "warn",
+
+    // Correctness
+    "no-array-constructor": "warn",
+    "no-empty": "warn",
+    "no-eq-null": "warn",
+    "no-extra-boolean-cast": "warn",
+    "no-fallthrough": "warn",
+    "no-irregular-whitespace": "warn",
+    "no-self-compare": "warn",
+    "no-throw-literal": "warn",
+    "no-unreachable": "warn",
+    "use-isnan": "warn",
+    "valid-typeof": "warn",
+
+    // Suspicious
+    "no-console": "warn",
+    "no-debugger": "warn",
+    "no-empty-function": "warn",
+    "no-empty-pattern": "warn",
+    "no-eval": "error",
+    "no-implied-eval": "error",
+    "no-redeclare": "warn",
+    "no-shadow": "warn",
+    "no-unreachable-loop": "warn",
+    "no-unused-private-class-members": "warn",
+
+    // Performance
+    "no-await-in-loop": "warn",
+    "no-loop-func": "warn",
+    "no-promise-executor-return": "warn",
+    "no-sync": "warn",
+
+    // Style
+    //
+    // The following 30 pure-formatting ESLint-compat rules were listed here but are NOT
+    // implemented by the installed oxlint (1.76.0) — verified empirically: with any one of
+    // them present, `oxlint --print-config` (and therefore `pnpm lint`) refuses to parse the
+    // config at all ("Rule '<name>' not found in plugin 'eslint'"), so the whole config
+    // (including no-restricted-imports below) failed to load. This went unnoticed only because
+    // this file used to be named `oxlint.json` (no leading dot), which oxlint never
+    // auto-discovers, so none of it — valid or invalid — was ever actually read. Now that the
+    // file is `.oxlintrc.json`, these have to be removed rather than merely renamed:
+    // array-bracket-spacing, block-spacing, brace-style, camelcase, comma-dangle,
+    // comma-spacing, comma-style, computed-property-spacing, eol-last, func-call-spacing,
+    // indent, key-spacing, keyword-spacing, linebreak-style, lines-between-class-members,
+    // no-mixed-spaces-and-tabs, no-new-object, no-tabs, no-trailing-spaces,
+    // no-whitespace-before-property, object-curly-spacing, one-var, operator-linebreak,
+    // padded-blocks, quote-props, semi-spacing, space-before-blocks, space-infix-ops,
+    // space-unary-ops, spaced-comment. If oxlint reintroduces formatting rules (or this repo
+    // adopts a dedicated formatter) these should be reconsidered; see also the
+    // `no-restricted-globals`/`no-restricted-syntax` note above for the same class of issue.
+    "no-array-method-this-argument": "warn",
+    "no-bitwise": "warn",
+
+    // Restriction
+    "default-case": "warn",
+    "default-case-last": "warn",
+    "no-empty-character-class": "warn",
+    // Declared for intent and for the day oxlint implements it; inert today.
+    // scripts/check-dependency-whitelist.ts (the org's former enforcement mechanism for this
+    // kind of check) has been retired org-wide (DEPENDENCY_POLICY.md); this ban currently
+    // relies on review only.
+    "no-restricted-globals": ["warn", "name", "open", "close", "event"],
+    "no-restricted-imports": [
+      "warn",
+      {
+        "paths": [
+          {
+            "name": "effect",
+            "message": "Please use named imports from 'effect' package",
+            "importNames": ["default"]
+          }
+        ],
+        "patterns": [
+          {
+            "regex": "^@nerima-games/(mc-audio|mc-compose|mc-dev-meta|mc-meshing|mc-noise|mc-physics|mc-save|mx-gameplay|mx-multiplayer|mx-redstone|mx-ui)(/.*)?$",
+            "message": "mc-playground-kit (Tier2, DEPENDENCY_POLICY.md) may depend only on mc-worldgen, mc-sim, mc-render, and mc-kernel (universally importable). Propose a graph change in nerima-games/.github's DEPENDENCY_POLICY.md before adding this import."
+          }
+        ]
+      }
+    ],
+    "prefer-template": "warn",
+
+    // Disabled rules (conflict with project style)
+    "@typescript-eslint/explicit-function-return-type": "off",
+    "@typescript-eslint/explicit-module-boundary-types": "off",
+    "@typescript-eslint/no-non-null-assertion": "off",
+    "no-case-declarations": "off",
+    "no-constant-condition": "off",
+    "no-param-reassign": "off",
+    "no-plusplus": "off"
+  },
+  "ignorePatterns": ["node_modules/**", "coverage/**", "dist/**", ".git/**", "*.config.ts", "docs/**"]
+}

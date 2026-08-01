@@ -21,8 +21,8 @@ import {
   stageOrderViolations,
   type LaunchOptions,
   type PreviewModule,
-} from '../domain/launch-options'
-import { DeltaTimeSecs, StageId, WorldId, position, type StageRegistration } from '../domain/kernel-vocabulary'
+} from '../src/domain/launch-options'
+import { DeltaTimeSecs, StageId, WorldId, position, type StageRegistration } from '../src/domain/kernel-vocabulary'
 
 const stage = (id: string, after?: ReadonlyArray<string>): StageRegistration => ({
   id: StageId(id),
