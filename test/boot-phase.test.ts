@@ -22,7 +22,7 @@ import {
   elapsedMillis,
   type BootPhase,
   type PhaseTiming,
-} from '../domain/boot-phase'
+} from '../src/domain/boot-phase'
 
 const timing = (phase: BootPhase, durationMillis: number): PhaseTiming => ({
   phase,

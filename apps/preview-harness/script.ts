@@ -31,7 +31,7 @@
  * programmed clock is better than measuring it against a real one, because
  * "the world phase took 400 ms" then means the same thing on every machine.
  */
-import type { BootPhase } from '../../domain/boot-phase'
+import type { BootPhase } from '../../src/domain/boot-phase'
 
 /** How the fake ports behave for one scenario. */
 export type PortFixture = {

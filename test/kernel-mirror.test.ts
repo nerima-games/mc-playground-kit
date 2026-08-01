@@ -39,7 +39,7 @@ import {
   WorldId,
   type ClockService,
   type FrameServices,
-} from '../domain/kernel-vocabulary'
+} from '../src/domain/kernel-vocabulary'
 
 /**
  * Kernel's `ClockService`, restated from `mc-kernel/domain/clock.ts:43-48`.

@@ -8,13 +8,13 @@
  * says which test holds the claim and what the number used to be.
  */
 import { Effect, Layer, Option, Ref } from 'effect'
-import { Playground, PlaygroundLayer, type PlaygroundHandle } from '../../application/playground'
+import { Playground, PlaygroundLayer, type PlaygroundHandle } from '../../src/application/playground'
 import {
   InputPort,
   RendererPort,
   SimulationPort,
   WorldProviderPort,
-} from '../../application/preview-ports'
+} from '../../src/application/preview-ports'
 import {
   BOOT_BUDGET_MILLIS,
   BOOT_PHASE_BUDGET_MILLIS,
@@ -23,7 +23,7 @@ import {
   describeBootVerdict,
   DurationMillis,
   elapsedMillis,
-} from '../../domain/boot-phase'
+} from '../../src/domain/boot-phase'
 import {
   DEFAULT_FLAT_WORLD,
   DEFAULT_SPAWN_KIT,
@@ -31,7 +31,7 @@ import {
   normalizeLaunchOptions,
   stageOrderViolations,
   type PreviewModule,
-} from '../../domain/launch-options'
+} from '../../src/domain/launch-options'
 import {
   ClockPort,
   DeltaTimeSecs,
@@ -39,7 +39,7 @@ import {
   MonotonicTimeSecs,
   position,
   StageId,
-} from '../../domain/kernel-vocabulary'
+} from '../../src/domain/kernel-vocabulary'
 import { fixed, pad, padStart } from './style'
 
 const section = (title: string, why: string): ReadonlyArray<string> => ['', `== ${title}`, `   ${why}`, '']

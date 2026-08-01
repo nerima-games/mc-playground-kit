@@ -35,15 +35,15 @@ import {
   PlaygroundLayer,
   type PlaygroundApi,
   type PlaygroundHandle,
-} from '../../application/playground'
+} from '../../src/application/playground'
 import {
   InputPort,
   RendererPort,
   SimulationPort,
   WorldProviderPort,
-} from '../../application/preview-ports'
-import { BOOT_PHASE_ORDER, type BootPhase, type PhaseTiming } from '../../domain/boot-phase'
-import type { PreviewModule, StageOrderViolation } from '../../domain/launch-options'
+} from '../../src/application/preview-ports'
+import { BOOT_PHASE_ORDER, type BootPhase, type PhaseTiming } from '../../src/domain/boot-phase'
+import type { PreviewModule, StageOrderViolation } from '../../src/domain/launch-options'
 // `domain/kernel-vocabulary.ts` is NOT re-exported from `index.ts` — a consumer
 // must take that vocabulary from mc-kernel, and a dev app inside this repository
 // is the only thing that may reach for the local mirror directly. See the
@@ -56,7 +56,7 @@ import {
   position,
   StageId,
   type CameraPoseSnapshot,
-} from '../../domain/kernel-vocabulary'
+} from '../../src/domain/kernel-vocabulary'
 import { scenarioFor, stepAt, type Command, type PortFixture, type ScenarioName } from './script'
 
 const FROZEN_WALL_CLOCK = EpochMillis(1_700_000_000_000)

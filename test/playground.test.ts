@@ -28,8 +28,8 @@
  */
 import { describe, expect, it } from '@effect/vitest'
 import { Deferred, Effect, Layer, Option, Ref } from 'effect'
-import { BOOT_PHASE_ORDER } from '../domain/boot-phase'
-import { DEFAULT_FLAT_WORLD, DEFAULT_SPAWN_KIT, type PreviewModule } from '../domain/launch-options'
+import { BOOT_PHASE_ORDER } from '../src/domain/boot-phase'
+import { DEFAULT_FLAT_WORLD, DEFAULT_SPAWN_KIT, type PreviewModule } from '../src/domain/launch-options'
 import {
   ClockPort,
   DeltaTimeSecs,
@@ -40,9 +40,9 @@ import {
   position,
   type CameraPoseSnapshot,
   type StageRegistration,
-} from '../domain/kernel-vocabulary'
-import { InputPort, RendererPort, SimulationPort, WorldProviderPort } from '../application/preview-ports'
-import { FIRST_FRAME_DELTA_SECS, Playground, PlaygroundLayer, launchPlayground } from '../application/playground'
+} from '../src/domain/kernel-vocabulary'
+import { InputPort, RendererPort, SimulationPort, WorldProviderPort } from '../src/application/preview-ports'
+import { FIRST_FRAME_DELTA_SECS, Playground, PlaygroundLayer, launchPlayground } from '../src/application/playground'
 
 // ---------------------------------------------------------------------------
 // Fakes
