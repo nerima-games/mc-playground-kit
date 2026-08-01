@@ -165,6 +165,34 @@ const program = Effect.gen(function* () {
 
 API 全体は [`docs/public-api.md`](./docs/public-api.md)。
 
+### Browser lifecycle
+
+ブラウザでは `makeBrowserPreview` が canvas、RAF、abort、DOM listener と実ランタイムの
+寿命を一世代として所有する。`startRuntime` は構造的な境界なので、mc-compose の
+`BrowserSession` と renderer/input の mount adapter を結合した結果をそのまま返せる。
+
+```typescript
+const preview = yield* makeBrowserPreview({
+  container: document.querySelector('#game')!,
+  startRuntime: (surface) => Effect.gen(function* () {
+    const session = yield* startBrowserSession(runtimes)
+    const mount = yield* mountGame(session.game, surface)
+    surface.onCleanup(() => mount.removeListeners())
+    return {
+      frame: mount.frame,
+      stop: Effect.zipRight(mount.stop, session.stop),
+    }
+  }),
+})
+
+const running = yield* preview.start   // 二重 start は同じ世代を返す
+yield* preview.restart                 // hot reload: 旧世代を停止して再 mount
+yield* running.stop                    // 冪等。所有 canvas/RAF/listener も解放
+```
+
+呼び出し側から渡した canvas は削除せず、kit が生成した canvas だけを削除する。
+起動途中で失敗した場合も、登録済み cleanup と所有 canvas を rollback する。
+
 ## 開発
 
 ### セットアップ
@@ -209,6 +237,7 @@ Nix を使わない場合は Node.js 24 以上と pnpm 11（`corepack` 推奨）
 | 起動オプション（引数ゼロで完全な設定になる正規化。純粋・全域） | `domain/launch-options.ts` | DN-02 |
 | 起動予算（7 フェーズ / 合計 1000 ms / 判定関数） | `domain/boot-phase.ts` | DN-02 |
 | 再入可能な `launch` / 取り残し fiber ゼロ | `application/playground.ts` | DN-03 |
+| browser canvas / RAF / abort / mount lifecycle | `application/browser-preview.ts` | DN-03 |
 | teardown は boot の逆順（**input が最初**） | `application/playground.ts` | DN-04 |
 | stage 順序の**検査**（解決ではない） | `domain/launch-options.ts` | DN-05 |
 | deltaTime クランプを**持たない**（mc-sim 所有） | `application/playground.ts` | DN-06 |

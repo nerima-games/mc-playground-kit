@@ -12,10 +12,9 @@
     // The finished harness mounts a canvas and therefore needs `"DOM"`. It is
     // not listed yet because the current source is pure: launch options,
     // defaults, and a boot-phase budget, all of which are checked in Node.
-    // Keeping the lib narrow until the first DOM line lands means the boot-order
-    // logic stays testable headlessly, which is exactly the property Playwright
-    // (SwiftShader, no pointer lock) cannot give us. See docs/testing.md.
-    "lib": ["ES2024"],
+    // Browser lifecycle types require DOM declarations; tests still inject the
+    // canvas and frame scheduler so boot-order logic remains headless.
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
     "types": [],
 
     "allowJs": false,

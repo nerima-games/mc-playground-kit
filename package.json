@@ -1,6 +1,6 @@
 {
   "name": "@nerima-games/mc-playground-kit",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "Dev-only preview harness for the nerima-games Minecraft-clone rebuild: launch options, boot phase budget, and the glue that stands up a mini world + camera + renderer + input in about a second.",
   "homepage": "https://github.com/nerima-games/mc-playground-kit#readme",

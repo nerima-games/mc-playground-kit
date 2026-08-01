@@ -39,6 +39,7 @@ export * from './domain/launch-options'
 // --- Application: the harness and the surfaces it requires ------------------
 export * from './application/preview-ports'
 export * from './application/playground'
+export * from './application/browser-preview'
 
 // --- Provisional --------------------------------------------------------------
 // `domain/kernel-vocabulary.ts` is a temporary local mirror of
