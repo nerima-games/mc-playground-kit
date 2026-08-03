@@ -238,7 +238,8 @@ kernel の語彙を取ると真実の出所が 2 つになり、上記の削除�
 | `effect` | `^3.20.0` | 16 リポジトリで**同一メジャーに揃える**。Context / Layer の型が跨るため、メジャーが混ざると合成できない |
 | `@nerima-games/*` | 未宣言 | publish 後は**厳密ピン**（`0.3.1` のように範囲なし）。plan.md の bottom-up publish-then-pin |
 | `@playwright/test` | **未導入** | 最小 E2E 導入時に devDependency として追加（[testing.md](./testing.md) §2.1） |
-| `typescript` / `vitest` / `oxlint` | `^` 付き | ツールチェーンは揃えるが厳密ピンはしない |
+| `typescript` / `vitest` | `^` 付き | ツールチェーンは揃えるが厳密ピンはしない |
+| `oxlint` | Nix devShell 提供（`flake.nix`） | package.json devDependency ではない。16 リポジトリで nixpkgs 由来の単一バージョンに揃える（[README.md](../README.md)） |
 | `packageManager` | `pnpm@9.15.0` | 16 リポジトリで同一 |
 
 `engines.node` は `>=22.0.0`。`flake.nix` の devShell が `nodejs_22` を入れる。
