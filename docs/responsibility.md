@@ -26,7 +26,8 @@
 | 呼び出し側 stage の実行 | 宣言順で毎フレーム回す | 実装済 |
 | stage 順序の**検査** | 宣言順が `after` 制約と矛盾していないかの警告 | 実装済 `stageOrderViolations` |
 | 姿勢の**運搬** | sim の `CameraPoseSnapshot` を render へ渡す | 実装済（`SimulationPort` → `RendererPort`） |
-| 自身の最小 E2E | 起動→操作→スクリーンショット | **未実装**（[testing.md](./testing.md) §2） |
+| ブラウザプレビューの共通ライフサイクル | canvas 所有権・RAF・再起動・停止・後始末 | 実装済 `application/browser-preview.ts` |
+| 実DOM/WebGLを含むゲームE2E | 起動→操作→スクリーンショット | **mc-compose が所有**（kit はPlaywrightとゲーム実装を持たない） |
 
 ## 3. 非スコープ（明示的に持たない）
 
