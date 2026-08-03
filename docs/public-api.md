@@ -404,9 +404,40 @@ export type PlaygroundPorts = WorldProviderPort | SimulationPort | RendererPort 
 
 `renderFrame` が姿勢を引数で受けるのは §3.2 のとおり。
 
+## 6. Browser lifecycle（`application/browser-preview.ts`）
+
+ブラウザ向けプレビューは `makeBrowserPreview(options)` が返すインスタンス単位の API で管理する。
+`startRuntime` は mc-compose の `BrowserRuntimeModule` / `composeGame` と描画・入力 mount をつなぐ
+構造的な adapter 境界であり、本パッケージが第 2 の composition root になることを避ける。
+
+```typescript
+export type BrowserPreviewApi = {
+  readonly start: Effect.Effect<BrowserPreviewHandle, BrowserPreviewStartError>
+  readonly restart: Effect.Effect<
+    BrowserPreviewHandle,
+    BrowserPreviewStartError | BrowserPreviewStopError
+  >
+  readonly current: Effect.Effect<Option.Option<BrowserPreviewHandle>>
+  readonly stop: Effect.Effect<void, BrowserPreviewStopError>
+}
+
+export const makeBrowserPreview: (
+  options: BrowserPreviewOptions,
+) => Effect.Effect<BrowserPreviewApi>
+```
+
+同一インスタンスへの重複 `start` は同じ handle を返す。`restart` は旧 generation を完全停止してから
+新しい canvas/runtime を起動する。生成した canvas、RAF、AbortSignal listener、adapter が登録した
+cleanup は generation が所有し、開始失敗時にも逆順で rollback される。呼び出し側から渡された canvas
+は停止時に DOM から除去しない。
+
+`BrowserPreviewRuntime.frame` は直列に実行され、完了するまで次の RAF を予約しない。`stop` / `restart` /
+外部 abort は実行中の frame fiber を interrupt し、その release 完了後に runtime の `stop` と cleanup を
+実行する。したがって adapter は非同期の frame Effect を返しても、解放済み renderer/input と競合しない。
+
 `InputPort` に実装が無いことについては [responsibility.md](./responsibility.md) §3.1。
 
-## 6. 参照実装との照合
+## 7. 参照実装との照合
 
 plan.md §3.10 の移植元は **「なし（新規）」**。以下は「対応物がある / ない」の明示である。
 
@@ -464,7 +495,7 @@ packages/app/application/main/session-lifecycle-startup.ts:104-105
 `REGRESSION: the whole budget is smaller than the reference session could ever be` が
 `BOOT_BUDGET_MILLIS < 2500` を assert している。
 
-## 7. APIロック
+## 8. APIロック
 
 plan.md §6 Step 0-3。**実装済みで、§9 のツール選定も決着している。**
 
