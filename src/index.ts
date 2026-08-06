@@ -42,11 +42,7 @@ export * from './application/playground'
 export * from './application/browser-preview'
 
 // --- Provisional --------------------------------------------------------------
-// `domain/kernel-vocabulary.ts` is a temporary local mirror of
-// @nerima-games/mc-kernel and is NOT re-exported: consumers must take that
-// vocabulary from kernel, not from here, or the mirror becomes a second source
-// of truth and the deletion described in that file turns into a breaking
-// change. Types that unavoidably appear in this repository's signatures
-// (DeltaTimeSecs, CameraPoseSnapshot, StageRegistration, ...) are structurally
-// identical to kernel's, so a consumer importing them from kernel typechecks
-// against these. Same call, and the same reason, as mc-sim's barrel.
+// Kernel vocabulary is not re-exported from this barrel: consumers import it
+// from `@nerima-games/mc-kernel`, keeping one source of truth. Types that
+// appear in this repository's signatures remain structurally compatible with
+// the published package.

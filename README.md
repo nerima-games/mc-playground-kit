@@ -57,7 +57,7 @@ kit 自身が mc-worldgen / mc-sim / mc-render に依存するのは正常な実
 
 | 依存先 | 何をもらうか | Port |
 | --- | --- | --- |
-| `mc-kernel` | 共有語彙。どのリポジトリからも import 可（許可リストに書かずに import できる） | — |
+| `mc-kernel` | 公開済みの共有語彙。どのリポジトリからも import 可（許可リストに書かずに import できる） | — |
 | `mc-worldgen` | ミニ平地ワールドの生成・破棄 | `WorldProviderPort` |
 | `mc-sim` | スポーン / tick / `CameraPoseSnapshot` の読み取り / 停止 | `SimulationPort` |
 | `mc-render` | 描画一式 | `RendererPort` |
@@ -66,10 +66,9 @@ kit 自身が mc-worldgen / mc-sim / mc-render に依存するのは正常な実
 `mc-meshing` / `mc-physics` / `mc-save` / `mc-noise` は **import できない**（推移依存）。
 `mc-audio` と `mx-*` / `mc-compose` には到達すらしない。
 
-**現在の `dependencies` は `effect` のみ。** 上記 4 つはまだどれも publish されていないため
-（plan.md §6 Step 3 の bottom-up publish-then-pin）、
-サービス群は `application/preview-ports.ts` の Port 越しに受け取る形になっている。
-kernel の語彙は `domain/kernel-vocabulary.ts` に暫定ミラーしてあり、kernel 公開時に削除する。
+`@nerima-games/mc-kernel` は公開済みの直接依存であり、共有語彙は同パッケージから直接
+import している。`mc-meshing` / `mc-physics` / `mc-save` は引き続き Port 越しに受け取るため、
+kernel の直接依存化でサービス境界が変わるわけではない。
 
 publish 後も Port のままにする理由は [`docs/design-notes.md`](./docs/design-notes.md) DN-07:
 E2E 環境が SwiftShader かつポインタロック不可である以上、起動順序・後始末順序・再入可能性は
@@ -287,8 +286,8 @@ Nix を使わない場合は Node.js 24 以上と pnpm 11（`corepack` 推奨）
 - **カバレッジ閾値は未設定。** 参照実装は 99% を強制しているが、スケルトンに閾値を課しても意味がない。
   計測とレポートは常に動かしており、99% ゲートは完了条件到達時に有効化する。
   なお kit のカバレッジは **Port の向こう側を測れない**ので、99% でも起動時間は保証しない。
-- **`domain/kernel-vocabulary.ts` は暫定ミラー。** mc-kernel 公開時に削除する。
-  `index.ts` から re-export していないのは、真実の出所を 2 つにしないため。
+- **mc-kernel の語彙は公開 package から直接 import。** ローカルミラーとその専用テストは削除済みで、
+  `index.ts` から再公開していないのは、真実の出所を 2 つにしないため。
 - **`FIRST_FRAME_DELTA_SECS` は暫定複製**（0.016）。mc-sim 公開時に import に置き換えて削除する。
 
 ## ドキュメント

@@ -297,7 +297,6 @@ Node の決定論テストで検証しているのは、同じ方針の別の現
 | `application/playground.ts` | 467 |
 | `domain/launch-options.ts` | 337 |
 | `domain/boot-phase.ts` | 288 |
-| `domain/kernel-vocabulary.ts` | 225（暫定ミラー。kernel 公開時に削除） |
 | `application/preview-ports.ts` | 185 |
 | `index.ts` | 51 |
 | **production 合計** | **1,553** |
