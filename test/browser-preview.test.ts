@@ -139,6 +139,37 @@ describe('browser preview', () => {
     }),
   )
 
+  it.effect('captures the frame handler once for the RAF loop', () =>
+    Effect.gen(function* () {
+      const dom = fakeDom()
+      const animation = fakeScheduler()
+      const frames: Array<number> = []
+      let frameReads = 0
+      const preview = yield* makeBrowserPreview({
+        container: dom.container,
+        createCanvas: () => dom.canvas,
+        scheduler: animation.scheduler,
+        startRuntime: () => Effect.succeed({
+          get frame() {
+            frameReads += 1
+            return (timestamp: number) => Effect.sync(() => { frames.push(timestamp) })
+          },
+          stop: Effect.void,
+        } satisfies BrowserPreviewRuntime),
+      })
+
+      yield* preview.start
+      animation.runNext(100)
+      yield* Effect.yieldNow()
+      animation.runNext(116)
+      yield* Effect.yieldNow()
+
+      expect(frames).toStrictEqual([100, 116])
+      expect(frameReads).toBe(1)
+      yield* preview.stop
+    }),
+  )
+
   it.effect('interrupts an active frame before releasing runtime resources', () =>
     Effect.gen(function* () {
       const dom = fakeDom()
