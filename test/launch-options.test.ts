@@ -22,7 +22,7 @@ import {
   type LaunchOptions,
   type PreviewModule,
 } from '../src/domain/launch-options'
-import { DeltaTimeSecs, StageId, WorldId, position, type StageRegistration } from '../src/domain/kernel-vocabulary'
+import { DeltaTimeSecs, StageId, WorldId, position, type StageRegistration } from '@nerima-games/mc-kernel'
 
 const stage = (id: string, after?: ReadonlyArray<string>): StageRegistration => ({
   id: StageId(id),

@@ -93,7 +93,7 @@ import {
   type CameraPoseSnapshot,
   type ClockService,
   type StageRegistration,
-} from '../domain/kernel-vocabulary'
+} from '@nerima-games/mc-kernel'
 import {
   InputPort,
   RendererPort,
@@ -128,8 +128,8 @@ export const FRAME_QUEUE_CAPACITY = 60
  *     export const FIRST_FRAME_DELTA_SECS: DeltaTimeSecs = DeltaTimeSecs.make(0.016)
  *   mc-sim/domain/frame-timing.ts:48
  *
- * PROVISIONAL, like `domain/kernel-vocabulary.ts`: when mc-sim is published this
- * constant is deleted and imported from there instead. Note what is NOT
+ * This remains a local preview constant; the kernel owns the branded type, while
+ * the harness owns its frame policy. Note what is NOT
  * duplicated — `clampFrameDelta` itself. See `submitFrame` below.
  */
 export const FIRST_FRAME_DELTA_SECS: DeltaTimeSecs = DeltaTimeSecs(0.016)

@@ -408,8 +408,8 @@ mc-sim の `clampFrameDelta` で 1 回クランプして渡す。
 
 **唯一複製しているのは定数 1 個**、`FIRST_FRAME_DELTA_SECS = 0.016`（boot の 1 フレーム目用）。
 前フレームが無いので差が計算できず、値が要る。関数 1 個より定数 1 個のほうが
-複製として遥かに小さく、`domain/kernel-vocabulary.ts` と同じ「mc-sim 公開時に削除」の
-規律の下に置いてある。
+複製として遥かに小さい。mc-kernel の語彙は公開済みパッケージから直接 import しているため、
+この定数は kernel mirror の残骸ではなく、boot の first-frame semantics に属するローカル定数である。
 
 ### 書くべき回帰テスト
 

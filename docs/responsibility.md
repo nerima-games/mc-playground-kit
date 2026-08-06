@@ -159,9 +159,9 @@ mc-sim の関数で 1 回クランプし、その結果を渡す。
 
 ### 親（kit が依存する）— 4 リポジトリ
 
-| リポジトリ | 使うもの | 未公開のため現状 |
+| リポジトリ | 使うもの | 現状 |
 | --- | --- | --- |
-| `mc-kernel` | 語彙全般（`DeltaTimeSecs`、`StageId`、`Position`、`CameraPoseSnapshot`、Clock Port、`GameModule`） | `domain/kernel-vocabulary.ts` に暫定ミラー |
+| `mc-kernel` | 語彙全般（`DeltaTimeSecs`、`StageId`、`Position`、`CameraPoseSnapshot`、Clock Port、`GameModule`） | 公開 package から直接 import |
 | `mc-worldgen` | ミニ平地ワールドの生成・破棄 | `WorldProviderPort` |
 | `mc-sim` | スポーン / tick / 姿勢の読み取り / 停止 | `SimulationPort` |
 | `mc-render` | 描画（`RendererPort`）**と実行時入力**（`InputPort`） | 2 つの Port |

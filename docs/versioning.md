@@ -97,8 +97,8 @@ kit が `1.0.0` を出せるのは、以下がすべて満たされたとき。
    従来想定されていた「`api-lock.md` が 4 週間変更されなければ凍結」という freeze-clock は
    `api-lock.md` 自体の廃止に伴い廃止された。定量的な代替基準(変更なし日数・利用実績件数など)も
    導入しない。判断材料は都度異なってよく、事前にすべて明文化することは求めない。
-6. `domain/kernel-vocabulary.ts` が削除され、`@nerima-games/mc-kernel` を
-   `dependencies` から参照している（§6）。
+6. `@nerima-games/mc-kernel` が `dependencies` に固定され、共有語彙を直接 import している。
+   ローカルの kernel mirror は削除済みである（§6）。
 7. `application/playground.ts` の `FIRST_FRAME_DELTA_SECS` が削除され、
    mc-sim から import されている（[design-notes.md](./design-notes.md) DN-06）。
 
@@ -168,45 +168,21 @@ mx-gameplay / mx-redstone よりは先**に `1.0.0` になる。
 将来 `apps/preview-template/` のような雛形を持つなら、それは `files` に入れる価値がある
 （consumer が「自分のプレビューを作る」ときの出発点になる）。現状は未実装。
 
-## 6. `domain/kernel-vocabulary.ts` の削除
+## 6. mc-kernel 直接依存への移行
 
-**publish 運用より前に片付ける負債。**
+mc-kernel は公開済みであり、kit は `@nerima-games/mc-kernel` を厳密な直接依存として固定している。
+共有語彙、`ClockPort`、`FrameServices` の runtime/type import は公開 package を参照し、
+ローカルの kernel mirror と mirror-only test は削除済みである。
 
-nothing-is-published のブートストラップ問題を回避するため、mc-kernel の語彙のうち
-kit が使う分だけを `domain/kernel-vocabulary.ts` にミラーしてある。
-mc-kernel が publish されたら:
+この移行で検証する契約は次のとおり。
 
-1. `@nerima-games/mc-kernel` を `package.json#dependencies` に追加
-2. `domain/kernel-vocabulary.ts` を削除
-3. `from './kernel-vocabulary'` を `from '@nerima-games/mc-kernel'` に置換
+1. `package.json#dependencies` に `@nerima-games/mc-kernel` が存在すること
+2. `src/` と `test/` にローカルの kernel vocabulary import が残っていないこと
+3. `pnpm typecheck` が公開型との assignability を検査すること
+4. `pnpm test` が注入された `ClockPort` を使う起動経路を検査すること
 
-**これで型検査が通らなければ、ミラーが drift しており、その drift 自体がバグである。**
-
-### 6-1. `ClockService` は**丸ごと**ミラーする。ミラーが最小であってはならない唯一の箇所
-
-`ClockService` は 2 フィールドである（`monotonicSecs` + `wallClockEpochMillis`）。
-kernel の実物（`mc-kernel/domain/clock.ts:43-48`）が 2 フィールドだからで、
-**本リポジトリは `wallClockEpochMillis` を 1 度も読まないが、それでもミラーしてある。**
-
-理由は型検査だけではない。`ClockPort` は `Context.Tag` であり、
-Effect は Tag を**その文字列キー**（`'@nerima-games/mc-kernel/ClockPort'`）で解決する。
-全リポジトリのミラーが同じキーを使っているので、**それらは実行時には同じ 1 つのサービス**でありながら、
-TypeScript にとっては無関係な名前的別型である。したがって狭いミラーは「語彙が少ない」ではなく、
-
-- 1 フィールドのミラーに対して組んだ `Layer` が 2 フィールドの Tag を**満たしてしまい**、
-- 足りないフィールドは、そのミラーを見たことのないリポジトリで `undefined` として読まれる。
-
-**これは実際に起きていた。** mc-sim のミラーが 1 フィールドで、
-kernel と本リポジトリが 2 フィールドだった。本リポジトリは mc-sim に依存するので、
-両者は同じバンドルに同居する。`tsc` は最後まで何も言わない。
-
-現在は 3 つのミラーすべてが kernel と同形であり、
-`test/kernel-mirror.test.ts`（mc-sim / mc-render / 本リポジトリの 3 か所にある）が
-Tag キーの文字列とサービスの形を**両方向で**固定している——狭めても広げても CI が落ちる。
-`FixedClockLayer` がオブジェクト引数を取ることも同様に固定してある。
-
-なお `index.ts` はこのミラーを **re-export していない**。consumer が kit 経由で
-kernel の語彙を取ると真実の出所が 2 つになり、上記の削除が破壊的変更に化けるためである。
+`index.ts` は kernel の語彙を再公開しない。consumer が kit 経由で共有語彙を取得すると、
+真実の出所が 2 つになり、依存境界が再び曖昧になるためである。
 
 ## 7. ビルド / publish パイプライン（完了時に追加）
 
