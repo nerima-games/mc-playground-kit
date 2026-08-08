@@ -82,15 +82,12 @@ export const bootView = (view: HarnessView, style: Style, width: number): Readon
     row(
       style,
       'launches',
-      `${style.paint(String(view.launches), VALUE)}   ` +
-        `${view.isRunning ? style.paint('running', GOOD) : style.paint('stopped', LABEL)}   ` +
-        `playground.current ${style.paint(view.currentIsSome ? 'Some' : 'None', view.currentIsSome ? GOOD : LABEL)}`,
+      `${style.paint(String(view.launches), VALUE)}   ${view.isRunning ? style.paint('running', GOOD) : style.paint('stopped', LABEL)}   playground.current ${style.paint(view.currentIsSome ? 'Some' : 'None', view.currentIsSome ? GOOD : LABEL)}`,
     ),
     row(
       style,
       'clock',
-      `${style.paint(`${fixed(view.clockMillis, 1)} ms`, VALUE)}   ` +
-        style.dim('an injected ClockPort the fixture programs — not a wall clock'),
+      `${style.paint(`${fixed(view.clockMillis, 1)} ms`, VALUE)}   ${style.dim('an injected ClockPort the fixture programs — not a wall clock')}`,
     ),
   ]
 
@@ -116,11 +113,7 @@ export const bootView = (view: HarnessView, style: Style, width: number): Readon
       row(
         style,
         '',
-        `${style.paint(pad(phase, 18), missing ? BAD : over ? WARN : VALUE)}` +
-          `${style.paint(padStart(missing ? '(missing)' : `${fixed(took, 1)} ms`, 10), missing ? BAD : over ? WARN : VALUE)}` +
-          `${style.dim(padStart(`${String(budget)} ms`, 10))}  ` +
-          `${style.paint(bar(took, budget, 18), over ? WARN : GOOD)}` +
-          (over ? style.paint(`  +${fixed(took - budget, 1)} ms`, WARN) : ''),
+        `${style.paint(pad(phase, 18), missing ? BAD : over ? WARN : VALUE)}${style.paint(padStart(missing ? '(missing)' : `${fixed(took, 1)} ms`, 10), missing ? BAD : over ? WARN : VALUE)}${style.dim(padStart(`${String(budget)} ms`, 10))}  ${style.paint(bar(took, budget, 18), over ? WARN : GOOD)}${over ? style.paint(`  +${fixed(took - budget, 1)} ms`, WARN) : ''}`,
       ),
     )
   }
@@ -130,21 +123,18 @@ export const bootView = (view: HarnessView, style: Style, width: number): Readon
     row(
       style,
       'total',
-      `${style.paint(`${fixed(record.totalMillis, 1)} ms`, record.withinBudget ? GOOD : BAD)} of ` +
-        `${style.paint(`${String(BOOT_BUDGET_MILLIS)} ms`, VALUE)}   ` +
-        `${style.paint(record.withinBudget ? 'WITHIN BUDGET' : 'OVER', record.withinBudget ? GOOD : BAD)}`,
+      `${style.paint(`${fixed(record.totalMillis, 1)} ms`, record.withinBudget ? GOOD : BAD)} of ${style.paint(`${String(BOOT_BUDGET_MILLIS)} ms`, VALUE)}   ${style.paint(record.withinBudget ? 'WITHIN BUDGET' : 'OVER', record.withinBudget ? GOOD : BAD)}`,
     ),
   )
   lines.push(
     row(
       style,
       'per-phase sum',
-      `${style.paint(`${String(budgetSum)} ms`, budgetSum === BOOT_BUDGET_MILLIS ? GOOD : BAD)}   ` +
-        style.dim(
-          budgetSum === BOOT_BUDGET_MILLIS
-            ? 'equals the total, so an overrun must be paid for by an underrun'
-            : 'does NOT equal the total',
-        ),
+      `${style.paint(`${String(budgetSum)} ms`, budgetSum === BOOT_BUDGET_MILLIS ? GOOD : BAD)}   ${style.dim(
+        budgetSum === BOOT_BUDGET_MILLIS
+          ? 'equals the total, so an overrun must be paid for by an underrun'
+          : 'does NOT equal the total',
+      )}`,
     ),
   )
   lines.push(row(style, 'verdict', style.dim(describeBootVerdict(classifyBootTimings(record.timings)))))
@@ -171,9 +161,7 @@ export const bootView = (view: HarnessView, style: Style, width: number): Readon
     row(
       style,
       'frames',
-      `submitted ${style.paint(String(view.framesSubmitted), VALUE)}   ` +
-        `framesRendered ${style.paint(String(view.framesRendered), VALUE)}   ` +
-        style.dim('framesRendered starts at 1: launch runs one whole frame, so a handle is a LIVE preview'),
+      `submitted ${style.paint(String(view.framesSubmitted), VALUE)}   framesRendered ${style.paint(String(view.framesRendered), VALUE)}   ${style.dim('framesRendered starts at 1: launch runs one whole frame, so a handle is a LIVE preview')}`,
     ),
   )
   lines.push(
@@ -182,8 +170,7 @@ export const bootView = (view: HarnessView, style: Style, width: number): Readon
       'camera pose',
       view.cameraPose === undefined
         ? style.dim('(none read)')
-        : `${style.paint(`${fixed(view.cameraPose.position.x, 2)}, ${fixed(view.cameraPose.position.y, 2)}, ${fixed(view.cameraPose.position.z, 2)}`, VALUE)}   ` +
-          style.dim('read FROM the simulation; there is no way to write one back'),
+        : `${style.paint(`${fixed(view.cameraPose.position.x, 2)}, ${fixed(view.cameraPose.position.y, 2)}, ${fixed(view.cameraPose.position.z, 2)}`, VALUE)}   ${style.dim('read FROM the simulation; there is no way to write one back')}`,
     ),
   )
 
@@ -218,10 +205,7 @@ export const ledgerView = (view: HarnessView, style: Style, width: number): Read
           return row(
             style,
             '',
-            `${style.dim(padStart(String(call.seq), 4))}  ${style.dim(padStart(`${fixed(call.atMillis, 1)} ms`, 9))}  ` +
-              `${style.paint(pad(call.port, 12), colour)}${style.paint(pad(call.method, 16), colour)}` +
-              (call.failed ? style.paint('THREW (the fixture made it)', BAD) : '') +
-              (isGhost ? style.paint('  <- fired by a SUPERSEDED handle, against the LIVE ports', BAD) : ''),
+            `${style.dim(padStart(String(call.seq), 4))}  ${style.dim(padStart(`${fixed(call.atMillis, 1)} ms`, 9))}  ${style.paint(pad(call.port, 12), colour)}${style.paint(pad(call.method, 16), colour)}${call.failed ? style.paint('THREW (the fixture made it)', BAD) : ''}${isGhost ? style.paint('  <- fired by a SUPERSEDED handle, against the LIVE ports', BAD) : ''}`,
           )
         })),
     '',
@@ -306,11 +290,10 @@ export const stagesView = (view: HarnessView, style: Style, width: number): Read
             row(
               style,
               '',
-              `${style.paint(pad(String(violation.stage), 22), WARN)}` +
-                style.paint(
-                  `runs at index ${String(violation.declaredIndex)} but declares after ${String(violation.mustFollow)}, which is at index ${String(violation.constraintIndex)}`,
-                  WARN,
-                ),
+              `${style.paint(pad(String(violation.stage), 22), WARN)}${style.paint(
+                `runs at index ${String(violation.declaredIndex)} but declares after ${String(violation.mustFollow)}, which is at index ${String(violation.constraintIndex)}`,
+                WARN,
+              )}`,
             ),
           )),
     '',
@@ -318,14 +301,14 @@ export const stagesView = (view: HarnessView, style: Style, width: number): Read
     row(
       style,
       'evaluations',
-      `${style.paint(String(view.frameStagesEvaluations), view.frameStagesEvaluations > view.launches ? BAD : VALUE)} ` +
-        `for ${style.paint(String(view.launches), VALUE)} launch(es)   ` +
-        (view.frameStagesEvaluations > view.launches
+      `${style.paint(String(view.frameStagesEvaluations), view.frameStagesEvaluations > view.launches ? BAD : VALUE)} for ${style.paint(String(view.launches), VALUE)} launch(es)   ${
+        view.frameStagesEvaluations > view.launches
           ? style.paint(
               `each module's frameStages Effect ran ${String(Math.round(view.frameStagesEvaluations / Math.max(1, view.launches)))}x per launch`,
               BAD,
             )
-          : style.dim('once per launch')),
+          : style.dim('once per launch')
+      }`,
     ),
     ...(view.frameStagesEvaluations > view.launches
       ? [
@@ -399,12 +382,11 @@ export const optionsView = (style: Style, width: number): ReadonlyArray<string> 
     row(
       style,
       'spawn feet',
-      `${style.paint(`${String(DEFAULT_SPAWN_KIT.feetPosition.x)}, ${String(DEFAULT_SPAWN_KIT.feetPosition.y)}, ${String(DEFAULT_SPAWN_KIT.feetPosition.z)}`, VALUE)}   ` +
-        style.dim(
-          DEFAULT_SPAWN_KIT.feetPosition.y === DEFAULT_FLAT_WORLD.surfaceY + 1
-            ? 'surfaceY + 1 — the player stands ON the ground, and the two constants agree'
-            : 'NOT surfaceY + 1 — the player spawns inside or above the ground',
-        ),
+      `${style.paint(`${String(DEFAULT_SPAWN_KIT.feetPosition.x)}, ${String(DEFAULT_SPAWN_KIT.feetPosition.y)}, ${String(DEFAULT_SPAWN_KIT.feetPosition.z)}`, VALUE)}   ${style.dim(
+        DEFAULT_SPAWN_KIT.feetPosition.y === DEFAULT_FLAT_WORLD.surfaceY + 1
+          ? 'surfaceY + 1 — the player stands ON the ground, and the two constants agree'
+          : 'NOT surfaceY + 1 — the player spawns inside or above the ground',
+      )}`,
     ),
     row(
       style,
@@ -421,8 +403,7 @@ export const optionsView = (style: Style, width: number): ReadonlyArray<string> 
       row(
         style,
         '',
-        `${style.paint(pad(phase, 18), VALUE)}${style.dim(padStart(`${String(BOOT_PHASE_BUDGET_MILLIS[phase])} ms`, 10))}  ` +
-          style.dim(bar(BOOT_PHASE_BUDGET_MILLIS[phase], BOOT_BUDGET_MILLIS, 30)),
+        `${style.paint(pad(phase, 18), VALUE)}${style.dim(padStart(`${String(BOOT_PHASE_BUDGET_MILLIS[phase])} ms`, 10))}  ${style.dim(bar(BOOT_PHASE_BUDGET_MILLIS[phase], BOOT_BUDGET_MILLIS, 30))}`,
       ),
     ),
     '',
@@ -464,9 +445,7 @@ export const timelineView = (
           row(
             style,
             '',
-            `${style.paint(padStart(`s${String(scripted.step)}`, 5), scripted.step === step ? WARN : LABEL)} ` +
-              `${style.paint(pad(describeCommand(scripted.command), 34), scripted.step === step ? VALUE : LABEL)}` +
-              style.dim(scripted.why),
+            `${style.paint(padStart(`s${String(scripted.step)}`, 5), scripted.step === step ? WARN : LABEL)} ${style.paint(pad(describeCommand(scripted.command), 34), scripted.step === step ? VALUE : LABEL)}${style.dim(scripted.why)}`,
           ),
         )),
   ]
@@ -503,9 +482,7 @@ export const findingsView = (view: HarnessView, style: Style, width: number): Re
       row(
         style,
         '',
-        `${style.paint(pad(finding.id, 7), finding.hit ? BAD : LABEL)}` +
-          `${style.paint(pad(finding.hit ? 'BROKEN' : 'ok', 8), finding.hit ? BAD : LABEL)}` +
-          (finding.hit ? style.paint(finding.text, BAD) : style.dim(finding.text)),
+        `${style.paint(pad(finding.id, 7), finding.hit ? BAD : LABEL)}${style.paint(pad(finding.hit ? 'BROKEN' : 'ok', 8), finding.hit ? BAD : LABEL)}${finding.hit ? style.paint(finding.text, BAD) : style.dim(finding.text)}`,
       ),
     ),
   ]

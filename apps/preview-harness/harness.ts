@@ -316,8 +316,8 @@ export const makeHarness = async (config: HarnessConfig): Promise<Harness> => {
   )
 
   // A handle deliberately kept from before the last relaunch.
-  let staleHandle: PlaygroundHandle | undefined
-  let liveHandle: PlaygroundHandle | undefined
+  let staleHandle: PlaygroundHandle | undefined = undefined
+  let liveHandle: PlaygroundHandle | undefined = undefined
 
   const recordLaunch = (handle: PlaygroundHandle): void => {
     launches += 1

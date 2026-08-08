@@ -69,6 +69,15 @@ import { Brand } from 'effect'
 // Duration
 // ---------------------------------------------------------------------------
 
+/** The floor (and the finite-conversion fallback) for every `DurationMillis`: durations do not go negative. */
+const ZERO_DURATION_MILLIS = 0
+/** Conversion factor between `MonotonicTimeSecs`'s seconds and `DurationMillis`'s milliseconds. */
+const MILLIS_PER_SECOND = 1000
+/** The value of an empty `ReadonlyArray`'s `.length`, named so the "nothing missing / nothing over" checks read as intent rather than arithmetic. */
+const EMPTY_COUNT = 0
+/** Decimal places shown by `describeBootVerdict`'s millisecond readings. */
+const DISPLAY_DECIMAL_PLACES = 1
+
 /**
  * A measured or budgeted duration, in milliseconds. Finite and non-negative.
  *
@@ -83,7 +92,7 @@ import { Brand } from 'effect'
 export type DurationMillis = number & Brand.Brand<'DurationMillis'>
 
 export const DurationMillis = Brand.refined<DurationMillis>(
-  (value) => Number.isFinite(value) && value >= 0,
+  (value) => Number.isFinite(value) && value >= ZERO_DURATION_MILLIS,
   (value) => Brand.error(`DurationMillis must be a finite, non-negative number of milliseconds, received ${value}`),
 )
 
@@ -114,10 +123,13 @@ export const DurationMillis = Brand.refined<DurationMillis>(
  * same admission the doc above already accepts as the least-bad answer.
  */
 export const elapsedMillis = (fromSecs: number, toSecs: number): DurationMillis => {
-  const millis = (toSecs - fromSecs) * 1000
+  const millis = (toSecs - fromSecs) * MILLIS_PER_SECOND
   // `Math.max(0, NaN)` is `NaN` and `Math.max(0, Infinity)` is `Infinity`, so
-  // the finiteness test has to come first; clamping alone never removed either.
-  return DurationMillis(Number.isFinite(millis) ? Math.max(0, millis) : 0)
+  // The finiteness test has to come first; clamping alone never removed either.
+  if (!Number.isFinite(millis)) {
+    return DurationMillis(ZERO_DURATION_MILLIS)
+  }
+  return DurationMillis(Math.max(ZERO_DURATION_MILLIS, millis))
 }
 
 // ---------------------------------------------------------------------------
@@ -188,18 +200,26 @@ export const BOOT_PHASE_ORDER: ReadonlyArray<BootPhase> = [
  *   at all so that "the options bag got expensive" is a visible event rather
  *   than a rounding error inside another phase.
  */
+const RESOLVE_OPTIONS_BUDGET_MILLIS = 5
+const WORLD_BUDGET_MILLIS = 400
+const SIMULATION_BUDGET_MILLIS = 120
+const RENDERER_BUDGET_MILLIS = 300
+const INPUT_BUDGET_MILLIS = 25
+const MODULES_BUDGET_MILLIS = 50
+const FIRST_FRAME_BUDGET_MILLIS = 100
+
 export const BOOT_PHASE_BUDGET_MILLIS: Readonly<Record<BootPhase, DurationMillis>> = {
-  'resolve-options': DurationMillis(5),
-  world: DurationMillis(400),
-  simulation: DurationMillis(120),
-  renderer: DurationMillis(300),
-  input: DurationMillis(25),
-  modules: DurationMillis(50),
-  'first-frame': DurationMillis(100),
+  'first-frame': DurationMillis(FIRST_FRAME_BUDGET_MILLIS),
+  input: DurationMillis(INPUT_BUDGET_MILLIS),
+  modules: DurationMillis(MODULES_BUDGET_MILLIS),
+  renderer: DurationMillis(RENDERER_BUDGET_MILLIS),
+  'resolve-options': DurationMillis(RESOLVE_OPTIONS_BUDGET_MILLIS),
+  simulation: DurationMillis(SIMULATION_BUDGET_MILLIS),
+  world: DurationMillis(WORLD_BUDGET_MILLIS),
 }
 
-/** plan.md §3.10's 「1秒で起動」, as a number. */
-export const BOOT_BUDGET_MILLIS: DurationMillis = DurationMillis(1000)
+/** See plan.md §3.10's 「1秒で起動」, as a number. */
+export const BOOT_BUDGET_MILLIS: DurationMillis = DurationMillis(MILLIS_PER_SECOND)
 
 // ---------------------------------------------------------------------------
 // Classification
@@ -254,35 +274,37 @@ export type BootBudgetVerdict = {
 export const classifyBootTimings = (timings: ReadonlyArray<PhaseTiming>): BootBudgetVerdict => {
   const measured = new Map<BootPhase, number>()
   for (const timing of timings) {
-    measured.set(timing.phase, (measured.get(timing.phase) ?? 0) + timing.durationMillis)
+    measured.set(timing.phase, (measured.get(timing.phase) ?? ZERO_DURATION_MILLIS) + timing.durationMillis)
   }
 
-  const totalMillis = DurationMillis([...measured.values()].reduce((sum, value) => sum + value, 0))
+  const totalMillis = DurationMillis(
+    [...measured.values()].reduce((sum, value) => sum + value, ZERO_DURATION_MILLIS),
+  )
 
   const missingPhases = BOOT_PHASE_ORDER.filter((phase) => !measured.has(phase))
 
   const overrunPhases = BOOT_PHASE_ORDER.flatMap((phase): ReadonlyArray<PhaseOverrun> => {
     const durationMillis = measured.get(phase)
     const budgetMillis = BOOT_PHASE_BUDGET_MILLIS[phase]
-    if (durationMillis === undefined || durationMillis <= budgetMillis) {
+    if (typeof durationMillis === 'undefined' || durationMillis <= budgetMillis) {
       return []
     }
     return [
       {
-        phase,
-        durationMillis: DurationMillis(durationMillis),
         budgetMillis,
+        durationMillis: DurationMillis(durationMillis),
         overByMillis: DurationMillis(durationMillis - budgetMillis),
+        phase,
       },
     ]
   })
 
   return {
-    withinBudget: totalMillis <= BOOT_BUDGET_MILLIS && missingPhases.length === 0,
-    totalMillis,
-    overBudgetMillis: DurationMillis(Math.max(0, totalMillis - BOOT_BUDGET_MILLIS)),
     missingPhases,
+    overBudgetMillis: DurationMillis(Math.max(ZERO_DURATION_MILLIS, totalMillis - BOOT_BUDGET_MILLIS)),
     overrunPhases,
+    totalMillis,
+    withinBudget: totalMillis <= BOOT_BUDGET_MILLIS && missingPhases.length === EMPTY_COUNT,
   }
 }
 
@@ -293,17 +315,34 @@ export const classifyBootTimings = (timings: ReadonlyArray<PhaseTiming>): BootBu
  * asked for is a number nobody has ever looked at, so `launchPlayground` logs
  * this on every boot (application/playground.ts).
  */
+const formatBootStatus = (verdict: BootBudgetVerdict): string => {
+  if (verdict.withinBudget) {
+    return 'OK'
+  }
+  return 'OVER'
+}
+
+const formatMissingPhases = (verdict: BootBudgetVerdict): string => {
+  if (verdict.missingPhases.length === EMPTY_COUNT) {
+    return ''
+  }
+  return ` missing=[${verdict.missingPhases.join(', ')}]`
+}
+
+const formatOverrunPhases = (verdict: BootBudgetVerdict): string => {
+  if (verdict.overrunPhases.length === EMPTY_COUNT) {
+    return ''
+  }
+  return ` over=[${verdict.overrunPhases
+    .map((overrun) => `${overrun.phase}+${overrun.overByMillis.toFixed(DISPLAY_DECIMAL_PLACES)}ms`)
+    .join(', ')}]`
+}
+
 export const describeBootVerdict = (verdict: BootBudgetVerdict): string => {
-  const headline = `boot ${verdict.totalMillis.toFixed(1)}ms / ${String(BOOT_BUDGET_MILLIS)}ms budget`
-  const status = verdict.withinBudget ? 'OK' : 'OVER'
-  const missing =
-    verdict.missingPhases.length === 0 ? '' : ` missing=[${verdict.missingPhases.join(', ')}]`
-  const overruns =
-    verdict.overrunPhases.length === 0
-      ? ''
-      : ` over=[${verdict.overrunPhases
-          .map((overrun) => `${overrun.phase}+${overrun.overByMillis.toFixed(1)}ms`)
-          .join(', ')}]`
+  const headline = `boot ${verdict.totalMillis.toFixed(DISPLAY_DECIMAL_PLACES)}ms / ${String(BOOT_BUDGET_MILLIS)}ms budget`
+  const status = formatBootStatus(verdict)
+  const missing = formatMissingPhases(verdict)
+  const overruns = formatOverrunPhases(verdict)
 
   return `${status} ${headline}${missing}${overruns}`
 }

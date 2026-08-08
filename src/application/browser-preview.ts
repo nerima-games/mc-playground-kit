@@ -172,7 +172,7 @@ export const makeBrowserPreview = (
       }
       runtime = started.right
 
-      const frame = runtime.frame
+      const { frame } = runtime
       if (frame !== undefined) {
         const tick: FrameRequestCallback = (timestamp) => {
           if (stopped) return

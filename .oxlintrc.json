@@ -98,6 +98,23 @@
     // `no-restricted-globals`/`no-restricted-syntax` note above for the same class of issue.
     "no-array-method-this-argument": "warn",
     "no-bitwise": "warn",
+    // `Context.Tag('...')` (Effect's Tag-class factory, extended by every port in
+    // application/*-ports.ts and application/playground.ts) and the `Brand.refined`/
+    // `Brand.nominal` constructors this repo declares for its branded primitives
+    // (`DurationMillis`, `DeltaTimeSecs`) are capitalized functions by convention, not
+    // classes — none of them can be called with `new`. Declaring them here is the
+    // documented exception the rule's own message points to, not a suppression.
+    "new-cap": ["warn", { "capIsNewExceptions": ["Tag", "DurationMillis", "DeltaTimeSecs"] }],
+    // `T`, `K`, `E`, `R` etc. are TypeScript's own convention for generic type
+    // parameters (Effect's own `Effect<A, E, R>` uses exactly this pattern) and are
+    // not runtime identifiers a reader has to keep track of across a function body;
+    // `checkGeneric: false` scopes the length floor to actual bindings instead.
+    "id-length": ["warn", { "checkGeneric": false }],
+    // `_tag` is Effect's own discriminant field name on every tagged union it
+    // produces (`Option`, `Either`, every `Data.TaggedError`) — not a naming choice
+    // this repository made and not something a test asserting on `.option(x)._tag`
+    // could rename.
+    "no-underscore-dangle": ["warn", { "allow": ["_tag"] }],
 
     // Restriction
     "default-case": "warn",
@@ -137,5 +154,36 @@
     "no-param-reassign": "off",
     "no-plusplus": "off"
   },
+  // Org policy (2026-08-08): src/ stays fully strict — every warning above gets a real
+  // fix, never a disable comment. test/**, scripts/** and apps/** (preview/dev tooling)
+  // relax the style rules that fire on patterns those directories use by design: test
+  // assertions compare against literal expected values (no-magic-numbers), fixtures and
+  // scripts favor short loop/index identifiers (id-length), scripts print to stdout
+  // (no-console), and none of this is src/'s domain logic.
+  "overrides": [
+    {
+      "files": ["test/**", "apps/**", "scripts/**"],
+      "rules": {
+        "no-magic-numbers": "off",
+        "id-length": "off",
+        "no-ternary": "off",
+        "no-nested-ternary": "off",
+        "sort-keys": "off",
+        "sort-imports": "off",
+        "capitalized-comments": "off",
+        "no-undefined": "off",
+        "func-names": "off",
+        "max-statements": "off",
+        "prefer-destructuring": "off",
+        "no-continue": "off",
+        "max-params": "off",
+        "new-cap": "off",
+        "no-use-before-define": "off",
+        "complexity": "off",
+        "no-void": "off",
+        "no-console": "off"
+      }
+    }
+  ],
   "ignorePatterns": ["node_modules/**", "coverage/**", "dist/**", ".git/**", "*.config.ts", "docs/**"]
 }

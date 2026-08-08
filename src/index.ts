@@ -42,7 +42,9 @@ export * from './application/playground'
 export * from './application/browser-preview'
 
 // --- Provisional --------------------------------------------------------------
-// Kernel vocabulary is not re-exported from this barrel: consumers import it
-// from `@nerima-games/mc-kernel`, keeping one source of truth. Types that
-// appear in this repository's signatures remain structurally compatible with
-// the published package.
+/**
+ * Kernel vocabulary is not re-exported from this barrel: consumers import it
+ * from `@nerima-games/mc-kernel`, keeping one source of truth. Types that
+ * appear in this repository's signatures remain structurally compatible with
+ * the published package.
+ */

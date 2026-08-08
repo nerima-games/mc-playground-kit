@@ -49,9 +49,16 @@
  *    `override` never carried an explicit `undefined` — which rule 2 has just
  *    made legal. Hence `pick` below, which treats `undefined` as "not supplied".
  */
+import {
+  type GameModule,
+  type Position,
+  type StageId,
+  type StageRegistration,
+  type WorldId,
+  WorldId as makeWorldId,
+  position,
+} from '@nerima-games/mc-kernel'
 import { Effect } from 'effect'
-import type { GameModule, Position, StageId, StageRegistration, WorldId } from '@nerima-games/mc-kernel'
-import { position, WorldId as makeWorldId } from '@nerima-games/mc-kernel'
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -64,10 +71,15 @@ import { position, WorldId as makeWorldId } from '@nerima-games/mc-kernel'
 export type Supplied<T> = { readonly [K in keyof T]?: T[K] | undefined }
 
 /** `undefined` means "not supplied", so the default wins. */
-const pick = <T>(supplied: T | undefined, fallback: T): T => (supplied === undefined ? fallback : supplied)
+const pick = <T>(supplied: T | undefined, fallback: T): T => {
+  if (typeof supplied === 'undefined') {
+    return fallback
+  }
+  return supplied
+}
 
 // ---------------------------------------------------------------------------
-// world
+// World
 // ---------------------------------------------------------------------------
 
 /**
@@ -99,24 +111,26 @@ export type FlatWorldSpec = {
 }
 
 export const DEFAULT_FLAT_WORLD: FlatWorldSpec = {
-  worldId: makeWorldId('playground'),
-  seed: 0,
-  // 49 is NOT chosen for its relation to sea level. plan.md §3.7 states
-  // SEA_LEVEL = 48, and an earlier version of this comment justified 49 as
-  // "one block above it, so water is reachable by digging down". Both halves
-  // are wrong: the reference's SEA_LEVEL is 63 (<reference-impl>
-  // /packages/core/domain/constants.ts:17), which puts 49 fourteen blocks
-  // BELOW sea level, and a flat preview world generates no water at all.
-  //
-  // It survives as an arbitrary-but-stable ground plane. Previews only need a
-  // surface to stand on. Revisit when a preview needs real terrain, and take
-  // the level from mc-worldgen rather than restating a constant here.
-  surfaceY: 49,
   radiusChunks: 1,
+  seed: 0,
+  /**
+   * 49 is NOT chosen for its relation to sea level. plan.md §3.7 states
+   * SEA_LEVEL = 48, and an earlier version of this comment justified 49 as
+   * "one block above it, so water is reachable by digging down". Both halves
+   * are wrong: the reference's SEA_LEVEL is 63 (<reference-impl>
+   * /packages/core/domain/constants.ts:17), which puts 49 fourteen blocks
+   * BELOW sea level, and a flat preview world generates no water at all.
+   *
+   * It survives as an arbitrary-but-stable ground plane. Previews only need a
+   * surface to stand on. Revisit when a preview needs real terrain, and take
+   * the level from mc-worldgen rather than restating a constant here.
+   */
+  surfaceY: 49,
+  worldId: makeWorldId('playground'),
 }
 
 // ---------------------------------------------------------------------------
-// spawnKit
+// SpawnKit
 // ---------------------------------------------------------------------------
 
 /**
@@ -149,24 +163,35 @@ export type SpawnKit = {
   readonly hotbar: ReadonlyArray<HotbarSlot>
 }
 
+/** X/Z of the spawn point: the flat plate's origin chunk, dead centre. */
+const SPAWN_ORIGIN_HORIZONTAL = 0
+/** Stand ON TOP of the surface block, not inside it — see the `surfaceY` comment above. */
+const SPAWN_HEIGHT_OFFSET = 1
+
 export const DEFAULT_SPAWN_KIT: SpawnKit = {
-  // surfaceY + 1: plan.md §3.4 — "ブロックは [y, y+1] を占有。スポーンと物理平面は
-  // surfaceY+1 基準". Spawning at surfaceY itself puts the player inside the
-  // ground, which the collision resolver then ejects them from, upward,
-  // visibly, on frame one.
-  feetPosition: position(0, DEFAULT_FLAT_WORLD.surfaceY + 1, 0),
+  /**
+   * Uses `surfaceY + 1`: plan.md §3.4 — "ブロックは [y, y+1] を占有。スポーンと物理平面は
+   * surfaceY+1 基準". Spawning at surfaceY itself puts the player inside the
+   * ground, which the collision resolver then ejects them from, upward,
+   * visibly, on frame one.
+   */
+  feetPosition: position(
+    SPAWN_ORIGIN_HORIZONTAL,
+    DEFAULT_FLAT_WORLD.surfaceY + SPAWN_HEIGHT_OFFSET,
+    SPAWN_ORIGIN_HORIZONTAL,
+  ),
+  hotbar: [
+    { count: 64, item: 'STONE' },
+    { count: 64, item: 'OAK_PLANKS' },
+    { count: 64, item: 'TORCH' },
+  ],
+  pitchRadians: 0,
   // Facing -Z, level. Kernel's convention: yaw 0 looks down -Z.
   yawRadians: 0,
-  pitchRadians: 0,
-  hotbar: [
-    { item: 'STONE', count: 64 },
-    { item: 'OAK_PLANKS', count: 64 },
-    { item: 'TORCH', count: 64 },
-  ],
 }
 
 // ---------------------------------------------------------------------------
-// modules
+// Modules
 // ---------------------------------------------------------------------------
 
 /**
@@ -247,19 +272,19 @@ export const normalizeLaunchOptions = (options?: LaunchOptions | undefined): Res
   const spawnKit = options?.spawnKit
 
   return {
-    world: {
-      worldId: pick(world?.worldId, DEFAULT_FLAT_WORLD.worldId),
-      seed: pick(world?.seed, DEFAULT_FLAT_WORLD.seed),
-      surfaceY: pick(world?.surfaceY, DEFAULT_FLAT_WORLD.surfaceY),
-      radiusChunks: pick(world?.radiusChunks, DEFAULT_FLAT_WORLD.radiusChunks),
-    },
+    modules: pick(options?.modules, []),
     spawnKit: {
       feetPosition: pick(spawnKit?.feetPosition, DEFAULT_SPAWN_KIT.feetPosition),
-      yawRadians: pick(spawnKit?.yawRadians, DEFAULT_SPAWN_KIT.yawRadians),
-      pitchRadians: pick(spawnKit?.pitchRadians, DEFAULT_SPAWN_KIT.pitchRadians),
       hotbar: pick(spawnKit?.hotbar, DEFAULT_SPAWN_KIT.hotbar),
+      pitchRadians: pick(spawnKit?.pitchRadians, DEFAULT_SPAWN_KIT.pitchRadians),
+      yawRadians: pick(spawnKit?.yawRadians, DEFAULT_SPAWN_KIT.yawRadians),
     },
-    modules: pick(options?.modules, []),
+    world: {
+      radiusChunks: pick(world?.radiusChunks, DEFAULT_FLAT_WORLD.radiusChunks),
+      seed: pick(world?.seed, DEFAULT_FLAT_WORLD.seed),
+      surfaceY: pick(world?.surfaceY, DEFAULT_FLAT_WORLD.surfaceY),
+      worldId: pick(world?.worldId, DEFAULT_FLAT_WORLD.worldId),
+    },
   }
 }
 
@@ -291,11 +316,13 @@ export type StageOrderViolation = {
 export const flattenStages = (
   modules: ReadonlyArray<PreviewModule>,
 ): Effect.Effect<ReadonlyArray<StageRegistration>> =>
-  // `frameStages` became an Effect when the GameModule contract was fixed: a
-  // module has to be able to acquire a service in order to BUILD its stages.
-  // `PreviewModule` pins `RRegister` to `never`, so nothing a playground accepts
-  // can require anything to register — the Effect here is sequencing, not a
-  // dependency. Flattening therefore stays as small as this comment claims.
+  /**
+   * `frameStages` became an Effect when the GameModule contract was fixed: a
+   * module has to be able to acquire a service in order to BUILD its stages.
+   * `PreviewModule` pins `RRegister` to `never`, so nothing a playground accepts
+   * can require anything to register — the Effect here is sequencing, not a
+   * dependency. Flattening therefore stays as small as this comment claims.
+   */
   Effect.map(
     Effect.all(modules.map((module) => module.frameStages)),
     (perModule) => perModule.flat(),
@@ -346,12 +373,13 @@ export const flattenedStageOrderViolations = (
     (stage.after ?? []).flatMap((mustFollow) => {
       const constraintIndex = firstIndexOf.get(mustFollow)
       // Absent constraint: no edge (kernel frame.ts). Self-edge: nothing to say.
-      if (constraintIndex === undefined || mustFollow === stage.id) {
+      if (typeof constraintIndex === 'undefined' || mustFollow === stage.id) {
         return []
       }
-      return constraintIndex > declaredIndex
-        ? [{ stage: stage.id, mustFollow, declaredIndex, constraintIndex }]
-        : []
+      if (constraintIndex <= declaredIndex) {
+        return []
+      }
+      return [{ constraintIndex, declaredIndex, mustFollow, stage: stage.id }]
     }),
   )
 }
