@@ -131,7 +131,7 @@ describe('elapsedMillis', () => {
   it.effect('REGRESSION: a non-finite reading is a zero, not a defect that kills the launch', () =>
     Effect.sync(() => {
       // `elapsedMillis` takes bare `number`s, not `MonotonicTimeSecs`, and
-      // domain/kernel-vocabulary.ts documents at length that a NARROWER mirror
+      // The published kernel ClockPort contract documents that a narrower mirror
       // of the Clock Port satisfies the same Tag at run time with fields
       // reading `undefined` — and `undefined - undefined` is NaN. Since
       // `DurationMillis` is a Brand.refined constructor requiring

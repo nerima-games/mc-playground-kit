@@ -70,41 +70,41 @@
  * not be a singleton in the first place" — two playgrounds side by side in one
  * process is a thing a preview page legitimately wants.
  */
-import { Cause, Context, Effect, Fiber, Layer, Option, Queue, Ref } from 'effect'
 import {
-  classifyBootTimings,
-  describeBootVerdict,
-  elapsedMillis,
   type BootBudgetVerdict,
   type BootPhase,
   type PhaseTiming,
+  classifyBootTimings,
+  describeBootVerdict,
+  elapsedMillis,
 } from '../domain/boot-phase'
 import {
-  flattenedStageOrderViolations,
-  flattenStages,
-  normalizeLaunchOptions,
+  type CameraPoseSnapshot,
+  ClockPort,
+  type ClockService,
+  DeltaTimeSecs,
+  type StageRegistration,
+} from '@nerima-games/mc-kernel'
+import { Cause, Context, Effect, Fiber, Layer, Option, Queue, Ref } from 'effect'
+import {
+  InputPort,
+  type PlaygroundPorts,
+  type PreviewInputService,
+  RendererPort,
+  type RendererService,
+  SimulationPort,
+  type SimulationService,
+  WorldProviderPort,
+  type WorldProviderService,
+} from './preview-ports'
+import {
   type LaunchOptions,
   type ResolvedLaunchOptions,
   type StageOrderViolation,
+  flattenStages,
+  flattenedStageOrderViolations,
+  normalizeLaunchOptions,
 } from '../domain/launch-options'
-import {
-  ClockPort,
-  DeltaTimeSecs,
-  type CameraPoseSnapshot,
-  type ClockService,
-  type StageRegistration,
-} from '../domain/kernel-vocabulary'
-import {
-  InputPort,
-  RendererPort,
-  SimulationPort,
-  WorldProviderPort,
-  type PlaygroundPorts,
-  type PreviewInputService,
-  type RendererService,
-  type SimulationService,
-  type WorldProviderService,
-} from './preview-ports'
 
 /**
  * Frames the dropping queue holds before it discards.
@@ -128,11 +128,19 @@ export const FRAME_QUEUE_CAPACITY = 60
  *     export const FIRST_FRAME_DELTA_SECS: DeltaTimeSecs = DeltaTimeSecs.make(0.016)
  *   mc-sim/domain/frame-timing.ts:48
  *
- * PROVISIONAL, like `domain/kernel-vocabulary.ts`: when mc-sim is published this
- * constant is deleted and imported from there instead. Note what is NOT
+ * This remains a local preview constant; the kernel owns the branded type, while
+ * the harness owns its frame policy. Note what is NOT
  * duplicated — `clampFrameDelta` itself. See `submitFrame` below.
  */
-export const FIRST_FRAME_DELTA_SECS: DeltaTimeSecs = DeltaTimeSecs(0.016)
+const FIRST_FRAME_DELTA_SECONDS = 0.016
+export const FIRST_FRAME_DELTA_SECS: DeltaTimeSecs = DeltaTimeSecs(FIRST_FRAME_DELTA_SECONDS)
+
+/** `generation.frames` starts here: the boot phase above already ran one frame. */
+const INITIAL_FRAME_COUNT = 1
+/** `generation.frames` advances by this much per pumped frame. */
+const FRAME_COUNT_STEP = 1
+/** `framesRendered` once a generation has stopped: nothing is still being pumped. */
+const STOPPED_FRAME_COUNT = 0
 
 /**
  * A running preview.
@@ -248,7 +256,7 @@ const runOneFrame = (
   stages: ReadonlyArray<StageRegistration>,
   dt: DeltaTimeSecs,
 ): Effect.Effect<void> =>
-  Effect.gen(function* () {
+  Effect.gen(function* runOneFrameGen() {
     yield* services.simulation.tick(dt)
     yield* Effect.forEach(stages, (stage) => stage.run(dt), { discard: true }).pipe(
       Effect.provideService(ClockPort, services.clock),
@@ -257,14 +265,135 @@ const runOneFrame = (
     yield* services.renderer.renderFrame(dt, pose)
   }).pipe(Effect.catchAllCause((cause) => Effect.logError(`Playground frame error: ${Cause.pretty(cause)}`)))
 
+/** Take ownership of the outcome of one boot: everything a `PlaygroundHandle` reports about how it started. */
+type BootOutcome = {
+  readonly resolved: ResolvedLaunchOptions
+  readonly stages: ReadonlyArray<StageRegistration>
+  readonly timings: ReadonlyArray<PhaseTiming>
+  readonly budget: BootBudgetVerdict
+  readonly warnings: ReadonlyArray<StageOrderViolation>
+}
+
+/** The bookkeeping `timePhase` needs to time a phase and record it. */
+type PhaseTimer = {
+  readonly timingsRef: Ref.Ref<ReadonlyArray<PhaseTiming>>
+  readonly clock: ClockService
+}
+
+/** Time one phase and record it against `timer.timingsRef`. Every phase in `BOOT_PHASE_ORDER` goes through here. */
+const timePhase = <A>(timer: PhaseTimer, name: BootPhase, work: Effect.Effect<A>): Effect.Effect<A> =>
+  Effect.gen(function* timePhaseGen() {
+    const startedAt = yield* timer.clock.monotonicSecs
+    const result = yield* work
+    const finishedAt = yield* timer.clock.monotonicSecs
+    yield* Ref.update(timer.timingsRef, (recorded) => [
+      ...recorded,
+      { durationMillis: elapsedMillis(startedAt, finishedAt), phase: name },
+    ])
+    return result
+  })
+
+/**
+ * Phases 2-5: stand up the world, the simulation, the renderer and input, in that
+ * causal order (domain/boot-phase.ts). Split out of `runBootSequence` purely to
+ * keep that function's own statement count small — this is still one strictly
+ * sequential leg of the same boot sequence, timed through the same `phase`.
+ */
+const bootInfrastructure = (
+  services: BootServices,
+  phase: <A>(name: BootPhase, work: Effect.Effect<A>) => Effect.Effect<A>,
+  resolved: ResolvedLaunchOptions,
+): Effect.Effect<void> =>
+  Effect.gen(function* bootInfrastructureGen() {
+    yield* phase('world', services.world.openFlatWorld(resolved.world))
+    yield* phase('simulation', services.simulation.spawn(resolved.spawnKit))
+    yield* phase('renderer', services.renderer.attach)
+    yield* phase('input', services.input.attach)
+  })
+
+/**
+ * Run every boot phase in causal order and return everything a `PlaygroundHandle`
+ * needs to report about its own boot. See rule 1-4 in the module header for why
+ * this exists as one place rather than being inlined into `launch`.
+ */
+const runBootSequence = (services: BootServices, options: LaunchOptions | undefined): Effect.Effect<BootOutcome> =>
+  Effect.gen(function* runBootSequenceGen() {
+    const timingsRef = yield* Ref.make<ReadonlyArray<PhaseTiming>>([])
+    const phase = <A>(name: BootPhase, work: Effect.Effect<A>): Effect.Effect<A> =>
+      timePhase({ clock: services.clock, timingsRef }, name, work)
+
+    // --- The boot sequence. Order is causal; see domain/boot-phase.ts. ------
+    const resolved = yield* phase('resolve-options', Effect.sync(() => normalizeLaunchOptions(options)))
+    yield* bootInfrastructure(services, phase, resolved)
+    /**
+     * ONE evaluation of `frameStages`, and it happens here, inside the phase
+     * that is supposed to be measuring it.
+     *
+     * `frameStages` is an Effect so that a module can acquire a service or
+     * allocate a `Ref` in order to build its stages, which makes a second
+     * evaluation a second, DISTINCT set of `StageRegistration`s. Deriving the
+     * stage-order warnings from `stageOrderViolations(resolved.modules)` did
+     * exactly that: it re-ran every module and reported on stages the pump
+     * would never run, and it paid the registration cost a second time
+     * OUTSIDE `phase()`, which under-reported the one number this repository
+     * exists to produce. `flattenedStageOrderViolations` is pure and takes the
+     * array below, so both problems are gone by construction.
+     */
+    const stages = yield* phase('modules', flattenStages(resolved.modules))
+    /**
+     * One frame end to end, so that a handle is a LIVE preview rather than a
+     * promise of one. Without this the budget would stop measuring one step
+     * before the thing the developer is actually waiting for: pixels.
+     */
+    yield* phase('first-frame', runOneFrame(services, stages, FIRST_FRAME_DELTA_SECS))
+
+    const timings = yield* Ref.get(timingsRef)
+    const budget = classifyBootTimings(timings)
+    const warnings = flattenedStageOrderViolations(stages)
+
+    return { budget, resolved, stages, timings, warnings }
+  })
+
+/**
+ * Install this launch's generation and start its frame pump as a daemon
+ * (rule 1 in the module header). Each generation owns its own queue, frame
+ * counter and running flag (rule 4), created here and nowhere else.
+ */
+const startGeneration = (
+  generationRef: Ref.Ref<Option.Option<Generation>>,
+  services: BootServices,
+  stages: ReadonlyArray<StageRegistration>,
+): Effect.Effect<Generation> =>
+  Effect.gen(function* startGenerationGen() {
+    const generation: Generation = {
+      fiber: yield* Ref.make<Option.Option<Fiber.RuntimeFiber<void, never>>>(Option.none()),
+      // INITIAL_FRAME_COUNT, not zero: the boot frame above already ran.
+      frames: yield* Ref.make(INITIAL_FRAME_COUNT),
+      queue: yield* Queue.dropping<DeltaTimeSecs>(FRAME_QUEUE_CAPACITY),
+      running: yield* Ref.make(true),
+    }
+
+    const pump = Queue.take(generation.queue).pipe(
+      Effect.flatMap((dt) => runOneFrame(services, stages, dt)),
+      Effect.flatMap(() => Ref.update(generation.frames, (count) => count + FRAME_COUNT_STEP)),
+      Effect.forever,
+    )
+
+    yield* Ref.set(generationRef, Option.some(generation))
+    const fiber = yield* Effect.forkDaemon(pump)
+    yield* Ref.set(generation.fiber, Option.some(fiber))
+
+    return generation
+  })
+
 // ---------------------------------------------------------------------------
 // The service
 // ---------------------------------------------------------------------------
 
-export const makePlayground: Effect.Effect<PlaygroundApi> = Effect.gen(function* () {
+export const makePlayground: Effect.Effect<PlaygroundApi> = Effect.gen(function* makePlaygroundGen() {
   // Two slots for one thing, because they are cleared at different moments:
   // `generationRef` is what a launch checks to decide whether it is still the
-  // current one, and `handleRef` is what an outside caller stops.
+  // Current one, and `handleRef` is what an outside caller stops.
   const generationRef = yield* Ref.make<Option.Option<Generation>>(Option.none())
   const handleRef = yield* Ref.make<Option.Option<PlaygroundHandle>>(Option.none())
 
@@ -277,11 +406,11 @@ export const makePlayground: Effect.Effect<PlaygroundApi> = Effect.gen(function*
    * out mid-teardown.
    */
   const stopGeneration = (generation: Generation): Effect.Effect<void> =>
-    Effect.gen(function* () {
+    Effect.gen(function* stopGenerationGen() {
       yield* Ref.set(generation.running, false)
       const fiber = yield* detach(generation.fiber)
-      // interruptFork, never interrupt: awaiting a fiber suspended inside a
-      // renderer call is how the next launch deadlocks.
+      // `interruptFork`, never `interrupt`: awaiting a fiber suspended inside a
+      // Renderer call is how the next launch deadlocks.
       yield* Option.match(fiber, {
         onNone: () => Effect.void,
         onSome: (running) => Fiber.interruptFork(running),
@@ -303,83 +432,24 @@ export const makePlayground: Effect.Effect<PlaygroundApi> = Effect.gen(function*
   const launch = (
     options?: LaunchOptions | undefined,
   ): Effect.Effect<PlaygroundHandle, never, ClockPort | PlaygroundPorts> =>
-    Effect.gen(function* () {
-      // Re-entrant (rule 3). Not "fail if already running": a teardown that can
-      // be cut short means "already running" is a state the caller cannot
-      // reliably escape, so the only useful answer is to escape it for them.
+    Effect.gen(function* launchGen() {
+      /**
+       * Re-entrant (rule 3). Not "fail if already running": a teardown that can
+       * be cut short means "already running" is a state the caller cannot
+       * reliably escape, so the only useful answer is to escape it for them.
+       */
       yield* stopCurrent
 
       const services: BootServices = {
         clock: yield* ClockPort,
-        world: yield* WorldProviderPort,
-        simulation: yield* SimulationPort,
-        renderer: yield* RendererPort,
         input: yield* InputPort,
+        renderer: yield* RendererPort,
+        simulation: yield* SimulationPort,
+        world: yield* WorldProviderPort,
       }
 
-      const timingsRef = yield* Ref.make<ReadonlyArray<PhaseTiming>>([])
-
-      /** Time one phase and record it. Every phase in `BOOT_PHASE_ORDER` goes through here. */
-      const phase = <A>(name: BootPhase, work: Effect.Effect<A>): Effect.Effect<A> =>
-        Effect.gen(function* () {
-          const startedAt = yield* services.clock.monotonicSecs
-          const result = yield* work
-          const finishedAt = yield* services.clock.monotonicSecs
-          yield* Ref.update(timingsRef, (recorded) => [
-            ...recorded,
-            { phase: name, durationMillis: elapsedMillis(startedAt, finishedAt) },
-          ])
-          return result
-        })
-
-      // --- The boot sequence. Order is causal; see domain/boot-phase.ts. ------
-      const resolved = yield* phase(
-        'resolve-options',
-        Effect.sync(() => normalizeLaunchOptions(options)),
-      )
-      yield* phase('world', services.world.openFlatWorld(resolved.world))
-      yield* phase('simulation', services.simulation.spawn(resolved.spawnKit))
-      yield* phase('renderer', services.renderer.attach)
-      yield* phase('input', services.input.attach)
-      // ONE evaluation of `frameStages`, and it happens here, inside the phase
-      // that is supposed to be measuring it.
-      //
-      // `frameStages` is an Effect so that a module can acquire a service or
-      // allocate a `Ref` in order to build its stages, which makes a second
-      // evaluation a second, DISTINCT set of `StageRegistration`s. Deriving the
-      // stage-order warnings from `stageOrderViolations(resolved.modules)` did
-      // exactly that: it re-ran every module and reported on stages the pump
-      // would never run, and it paid the registration cost a second time
-      // OUTSIDE `phase()`, which under-reported the one number this repository
-      // exists to produce. `flattenedStageOrderViolations` is pure and takes the
-      // array below, so both problems are gone by construction.
-      const stages = yield* phase('modules', flattenStages(resolved.modules))
-      // One frame end to end, so that a handle is a LIVE preview rather than a
-      // promise of one. Without this the budget would stop measuring one step
-      // before the thing the developer is actually waiting for: pixels.
-      yield* phase('first-frame', runOneFrame(services, stages, FIRST_FRAME_DELTA_SECS))
-
-      const timings = yield* Ref.get(timingsRef)
-      const budget = classifyBootTimings(timings)
-      const warnings = flattenedStageOrderViolations(stages)
-
-      // --- Install this launch's generation ----------------------------------
-      const generation: Generation = {
-        queue: yield* Queue.dropping<DeltaTimeSecs>(FRAME_QUEUE_CAPACITY),
-        frames: yield* Ref.make(1), // the boot frame above already ran
-        running: yield* Ref.make(true),
-        fiber: yield* Ref.make<Option.Option<Fiber.RuntimeFiber<void, never>>>(Option.none()),
-      }
-
-      const pump = Queue.take(generation.queue).pipe(
-        Effect.flatMap((dt) => runOneFrame(services, stages, dt)),
-        Effect.flatMap(() => Ref.update(generation.frames, (count) => count + 1)),
-        Effect.forever,
-      )
-
-      yield* Ref.set(generationRef, Option.some(generation))
-      const fiber = yield* Effect.forkDaemon(pump)
-      yield* Ref.set(generation.fiber, Option.some(fiber))
+      const { budget, resolved, stages, timings, warnings } = yield* runBootSequence(services, options)
+      const generation = yield* startGeneration(generationRef, services, stages)
 
       /**
        * Teardown, in the REVERSE of boot order, and never partial.
@@ -420,17 +490,20 @@ export const makePlayground: Effect.Effect<PlaygroundApi> = Effect.gen(function*
        * is also what makes `stop` idempotent in the ports, not merely in the
        * flags.
        */
-      const teardown: Effect.Effect<void> = Effect.gen(function* () {
+      const teardown: Effect.Effect<void> = Effect.gen(function* teardownGen() {
         yield* stopGeneration(generation)
-        const claimed = yield* Ref.modify(generationRef, (installed) =>
-          Option.isSome(installed) && installed.value === generation
-            ? [true, Option.none<Generation>()]
-            : [false, installed],
-        )
-        // A relaunch has already replaced this generation, or an earlier stop()
-        // already ran: either way the ports and the shared slots belong to
-        // somebody else now, and a late stop() must be inert with respect to
-        // them.
+        const claimed = yield* Ref.modify(generationRef, (installed) => {
+          if (Option.isSome(installed) && installed.value === generation) {
+            return [true, Option.none<Generation>()]
+          }
+          return [false, installed]
+        })
+        /**
+         * A relaunch has already replaced this generation, or an earlier stop()
+         * already ran: either way the ports and the shared slots belong to
+         * somebody else now, and a late stop() must be inert with respect to
+         * them.
+         */
         if (!claimed) {
           return
         }
@@ -453,22 +526,30 @@ export const makePlayground: Effect.Effect<PlaygroundApi> = Effect.gen(function*
       )
 
       const handle: PlaygroundHandle = {
-        options: resolved,
-        timings,
         budget,
+        cameraPose: services.simulation.cameraPose,
+        framesRendered: Ref.get(generation.running).pipe(
+          Effect.flatMap((running) => {
+            if (!running) {
+              return Effect.succeed(STOPPED_FRAME_COUNT)
+            }
+            return Ref.get(generation.frames)
+          }),
+        ),
+        isRunning: Ref.get(generation.running),
+        options: resolved,
         stageOrderWarnings: warnings,
+        stop: teardown,
         submitFrame: (dt) =>
           Ref.get(generation.running).pipe(
-            Effect.flatMap((running) =>
-              running ? Queue.offer(generation.queue, dt).pipe(Effect.asVoid) : Effect.void,
-            ),
+            Effect.flatMap((running) => {
+              if (!running) {
+                return Effect.void
+              }
+              return Queue.offer(generation.queue, dt).pipe(Effect.asVoid)
+            }),
           ),
-        framesRendered: Ref.get(generation.running).pipe(
-          Effect.flatMap((running) => (running ? Ref.get(generation.frames) : Effect.succeed(0))),
-        ),
-        cameraPose: services.simulation.cameraPose,
-        isRunning: Ref.get(generation.running),
-        stop: teardown,
+        timings,
       }
 
       yield* Ref.set(handleRef, Option.some(handle))
@@ -476,8 +557,8 @@ export const makePlayground: Effect.Effect<PlaygroundApi> = Effect.gen(function*
     })
 
   return {
-    launch,
     current: Ref.get(handleRef),
+    launch,
     stop: stopCurrent,
   }
 })
@@ -493,7 +574,7 @@ export const makePlayground: Effect.Effect<PlaygroundApi> = Effect.gen(function*
 export const PlaygroundLayer: Layer.Layer<Playground> = Layer.effect(Playground, makePlayground)
 
 /**
- * plan.md §3.10's named entry point.
+ * See plan.md §3.10's named entry point.
  *
  * `launchPlayground(options) → 起動済みミニゲーム`, routed through the
  * `Playground` service so that a second call tears the first preview down — see

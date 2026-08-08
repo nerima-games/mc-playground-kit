@@ -65,6 +65,9 @@ plan.md §6 Step 2 は 15 リポジトリすべての完了条件に「内蔵プ
 | stage 順序の**検査**（解決ではない） | `domain/launch-options.ts` | DN-05 |
 | devDependency 専用の強制 | `scripts/check-dependency-whitelist.ts` | DN-01 |
 
+共有語彙と Clock Port は公開済みの `@nerima-games/mc-kernel` から直接 import する。
+ローカルの kernel mirror と mirror-only test は削除済みである。
+
 まだ無いもの: **自身の最小 E2E（起動→操作→スクリーンショット）**、実 Layer、
 `apps/preview-*/` のサンプルプレビュー。
 
@@ -78,4 +81,5 @@ package.json への宣言は組織が禁じている。mc-compose の新しい�
 `devServerResolved` 条項が kit のコピーに無いのが原因で、これは kit 内では閉じない。
 実測と手順は [testing.md](./testing.md) §2.1。
 APIロックファイルは**ある** —— `api-lock.md` と `pnpm api:check`（[public-api.md](./public-api.md) §7）。
-`domain/kernel-vocabulary.ts` は mc-kernel 公開までの暫定ミラーであり、公開後に削除する。
+`@nerima-games/mc-kernel` を公開済みの直接依存として利用し、`domain/kernel-vocabulary.ts` と
+mirror-only test は削除済みである。

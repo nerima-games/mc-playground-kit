@@ -2,10 +2,10 @@
 
 ## 1. plan.md が要求する検証（§3.10）
 
-> **検証**: 自身の最小E2E（起動→操作→スクリーンショット）
+> **検証**: 共通ライフサイクルの決定論テスト。実DOM/WebGLを含むゲームE2Eは mc-compose が担う。
 
 15 リポジトリの中で、検証要件が**これ 1 行だけ**なのはここだけである。
-他は「ユニットテスト + 内蔵プレビュー」の 2 本立てだが、kit は違う。
+他は「ユニットテスト + 内蔵プレビュー」の 2 本立てであり、kitも同じである。
 
 理由は、**kit にとってプレビューと検証は同じものだから**である。
 mc-worldgen の地形プレビューは「mc-worldgen が正しいこと」を人間に見せる装置だが、
@@ -16,7 +16,7 @@ kit の最小プレビューは「**kit がプレビューを起動できるこ�
 | --- | --- | --- |
 | Node 決定論テスト | 順序・後始末・再入可能性・バジェットの算術が正しいこと。CI で高速に回る | **実装済**（`test/` 5 ファイル / 100 テスト） |
 | 内蔵プレビュー（起動 → 操作） | **人間が起動を見て、フェーズ別にコストを読めること** | **実装済**（[`apps/preview-harness/`](../apps/preview-harness/README.md)） |
-| ── うちスクリーンショット | **ブラウザで実際に立ち上がって絵が出ること** | **未実装。§2.1 を見ること** |
+| ── うちスクリーンショット | **ブラウザで実際に立ち上がって絵が出ること** | **mc-compose のE2Eで実装・検証済み** |
 
 plan.md §3.10 の検証要件は後者である。前者は plan.md が明示していないが、
 [design-notes.md](./design-notes.md) の各 DN を回帰テストとして焼き込むために不可欠であり、
@@ -27,17 +27,23 @@ plan.md §3.10 の検証要件は後者である。前者は plan.md が明示�
 
 > 各リポジトリの完了条件: ユニット/シナリオテスト green + **内蔵プレビューが操作可能**
 
-kit の場合これは「テスト green **かつ** 最小 E2E（起動→操作→スクリーンショット）が動く」である。
+kit の場合これは「テスト green **かつ** 内蔵プレビューが操作可能」である。実DOM/WebGLを含む
+起動→操作→スクリーンショットは mc-compose のE2Eで検証する。
 
 内蔵プレビューは [`apps/preview-harness/`](../apps/preview-harness/README.md) にあり、
 `pnpm preview` で起動する。`pnpm verify` には入らないが、`pnpm typecheck`
 （`tsconfig.preview.json`）と `pnpm lint` と `pnpm check:deps` の対象には入っている。
-**「起動 → 操作」は満たした。「スクリーンショット」はまだである。**
+**「起動 → 操作」は満たしている。スクリーンショットを含むゲームE2Eは mc-compose が所有する。**
 
-### 2.1 スクリーンショットの半分が無い理由 —— **2026-07-28 に測り直した。4 つのうち 3 つは消えている**
+### 2.1 スクリーンショット検証をmc-composeに置く理由
+
+以下は、kitへブラウザE2Eを追加する案を検討した記録である。現在は責務境界を確定し、
+実DOM/WebGLとゲーム挙動の検証を mc-compose に置いている。kitの未解決課題ではない。
+
+#### 検討時点の制約（2026-07-28）
 
 かつてここには 4 つの理由が並んでいた。**そのうち 3 つはもう成り立たない。**
-そして残っていなかった 5 つ目が、実際には現在の唯一のハードブロッカーである。
+当時は依存ホワイトリストの同期がハードブロッカーだった。
 
 | かつての理由 | いまの状態 |
 | --- | --- |
@@ -154,7 +160,17 @@ E2E はそこに差し込む。現在のプレビューはその**代わりで�
 
 この順序は避けられない。
 
-### 2.2 最小 E2E に書くこと（設計済み・未実装）
+### 2.2 ブラウザE2Eの責務境界
+
+ブラウザE2Eは kit に追加しない。kit は共通ライフサイクル（canvas、RAF、再起動、停止、
+後始末）を提供し、実DOM/WebGLとゲーム挙動を含む縦断検証は `mc-compose` が所有する。
+実際のエンド攻略E2Eは `mc-compose/e2e/end-journey.e2e.ts` で、起動からドラゴン撃破、
+報酬、帰還ポータル、flush/reload後の永続化まで検証している。
+
+kit 固有のブラウザE2Eを作ると、ゲーム固有のPort実装とPlaywright依存をkitへ持ち込み、
+「devDependency専用で出荷ゲームを所有しない」という責務境界を破る。
+
+### 2.3 最小E2Eの検証契約（mc-compose側）
 
 plan.md §3.10 の「起動→操作→スクリーンショット」を、DN-07 の環境制約の下で実現する。
 
@@ -191,7 +207,7 @@ kit の E2E は数本しかなく、しかも**安定性そのものを検証し
 
 ## 3. 現在のテスト
 
-`vitest run`。**5 ファイル / 100 テスト**、実行 1 秒未満。
+`vitest run`。**4 ファイル / 91 テスト**、実行 1 秒未満。
 
 | ファイル | テスト数 | 対応する DN |
 | --- | ---: | --- |
@@ -199,41 +215,17 @@ kit の E2E は数本しかなく、しかも**安定性そのものを検証し
 | `test/boot-phase.test.ts` | 20 | **DN-02**（1 秒バジェット）/ DN-09 |
 | `test/playground.test.ts` | 20 | **DN-03**（再入可能）/ **DN-04**（teardown 逆順）/ DN-05 / DN-06 / DN-08 |
 | `test/launch-options.test.ts` | 19 | DN-02 / **DN-05**（stage 順序の検査） |
-| `test/kernel-mirror.test.ts` | 9 | `domain/kernel-vocabulary.ts` が mc-kernel と同形であること（§3.1） |
 
 `check-dependency-whitelist.test.ts` が最大なのは偶然ではない。
 **本リポジトリの憲法（devDependency 専用）を守るのがこのゲートだから**である。
 
-### 3.1 `test/kernel-mirror.test.ts` が守っているもの
+### 3.1 公開済み mc-kernel の直接利用
 
-`domain/kernel-vocabulary.ts` は「削除して import を publish 済みパッケージに向け直せば型検査が通る」と
-約束している。**その約束は何にも強制されておらず、ロスターの他所では既に破られていた。**
-
-`ClockPort` は `Context.Tag` であり、Effect は Tag を**その文字列キー**
-（`'@nerima-games/mc-kernel/ClockPort'`）で解決する。したがって全リポジトリのミラーは
-実行時には同じ 1 つのサービスでありながら、TypeScript にとっては無関係な名前的別型である。
-mc-sim のミラーは `ClockService` を 1 フィールドで持っており（kernel と本リポジトリは 2 フィールド）、
-本リポジトリは mc-sim に依存するので両者は同じバンドルに同居する——
-**狭い側の `Layer` が広い側の Tag を満たし、`wallClockEpochMillis` が `undefined` になる。**
-`tsc` は最後まで何も言わない。
-
-同じ根を持つ 2 件目がブランドである。`Brand.Brand<'DeltaTimeSecs'>` も文字列でキーされるので、
-mc-physics が `[0.001, 0.05]` に refine していた `DeltaTimeSecs` と
-kernel の「有限かつ非負」の `DeltaTimeSecs` は、**検証の中身が違うのに TypeScript には同じ型**だった。
-
-このファイルはその両方を assert する:
-
-| it | 何を固定するか |
-| --- | --- |
-| `uses kernel’s tag key verbatim, which is why the shape has to match` | Tag キーを文字列リテラルで固定。ハザードの根そのもの |
-| `REGRESSION: the mirrored ClockService is not NARROWER than kernel’s` | 狭めたら落ちる |
-| `REGRESSION: the mirrored ClockService is not WIDER than kernel’s` | 広げても落ちる。**両方向**であることが要点 |
-| `REGRESSION: FixedClockLayer takes kernel’s object argument, not a bare reading` | シグネチャの drift |
-| `mirrors kernel’s FrameServices alias rather than narrowing it to never` | `FrameServices` は kernel と同じく `ClockPort` の別名 |
-| `DeltaTimeSecs is finite and non-negative — kernel’s refinement, not the clamp` | クランプは量の性質ではなくフレームループの関心事 |
-| `MonotonicTimeSecs is finite and non-negative` / `EpochMillis is a safe integer, so a fractional millisecond cannot be persisted` / `StageId and WorldId reject blank strings, as kernel’s identifiers do` | 残りのブランド述語 |
-
-同種のテストが mc-sim と mc-render にもある。
+`ClockPort`、`FrameServices`、ブランド付き共有語彙は `@nerima-games/mc-kernel` から直接
+import する。ローカルの `kernel-vocabulary` と mirror-only test は削除済みである。
+`pnpm typecheck` が公開型との assignability を検査し、`test/playground.test.ts` が
+注入された `ClockPort` を使う起動経路を検査する。ローカルの型ミラーを比較するテストは、
+二重の真実を再導入するため持たない。
 
 ## 4. テストの書き方（本リポジトリの規約）
 
@@ -382,16 +374,15 @@ typecheck (build + test の 2 プロジェクト)
 （落ちないゲートはゲートではなくドキュメントである）。本リポジトリのものは
 違反があれば必ず非ゼロ終了する。
 
-E2E ジョブは §2.2 の実装時に追加する。SwiftShader を使う以上 Linux ランナーで動くが、
-`workers: 1` にするので実行時間は素直に本数に比例する。
+実DOM/WebGLを含むE2Eジョブは mc-compose が所有する。kitのCIへPlaywrightを追加しない。
 
 ## 7. これから必要なテスト
 
-[design-notes.md](./design-notes.md) の「（要追加）」印を参照。特に重要な未実装:
+[design-notes.md](./design-notes.md) の「（要追加）」印を参照。kit固有の未実装:
 
 | テスト | 対応 | いつ |
 | --- | --- | --- |
-| **最小 E2E（起動→操作→スクリーンショット）** | DN-07 | **完了条件。** 4 Port の実装が揃ってから |
+| 実DOM/WebGLを含むゲームE2E | DN-07 | mc-compose の責務。kitには追加しない |
 | `a real boot with real Layers stays inside 1000ms` | DN-02 | 同上。**現状のバジェットテストは算術しか見ていない** |
 | `no fiber survives teardown`（`Fiber.roots` 相当） | DN-03 | 本実装時。現状は「旧ハンドルが新フレームを見ない」で代用しており必要条件にすぎない |
 | `100 consecutive relaunches leak neither memory nor listeners` | DN-03 | 本実装時 |

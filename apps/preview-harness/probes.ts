@@ -39,7 +39,7 @@ import {
   MonotonicTimeSecs,
   position,
   StageId,
-} from '../../src/domain/kernel-vocabulary'
+} from '@nerima-games/mc-kernel'
 import { fixed, pad, padStart } from './style'
 
 const section = (title: string, why: string): ReadonlyArray<string> => ['', `== ${title}`, `   ${why}`, '']
@@ -322,9 +322,9 @@ const budgetProbe = (): ReadonlyArray<string> => {
     '',
     '   How reachable that was depends on the clock. `MonotonicTimeSecs` is itself refined, so a',
     '   well-formed ClockPort cannot produce Infinity — but `elapsedMillis` does not take',
-    '   `MonotonicTimeSecs`, it takes `number`, and domain/kernel-vocabulary.ts:30-45 documents at',
-    '   length that a NARROWER mirror of the Clock Port satisfies the same Tag at run time with',
-    '   fields reading `undefined`. `undefined - undefined` is NaN — the third row above.',
+    '   `MonotonicTimeSecs`, it takes `number`, so a narrower object can satisfy the',
+    '   ClockPort tag at run time while its fields read `undefined`. `undefined - undefined`',
+    '   is NaN — the third row above.',
     '',
     '   Zero rather than an invented large duration, because a fabricated number would make',
     '   classifyBootTimings name a specific phase as overrunning by a specific amount and send',

@@ -172,14 +172,15 @@ export const makeBrowserPreview = (
       }
       runtime = started.right
 
-      if (runtime.frame !== undefined) {
+      const { frame } = runtime
+      if (frame !== undefined) {
         const tick: FrameRequestCallback = (timestamp) => {
-          if (stopped || runtime?.frame === undefined) return
+          if (stopped) return
           const deltaSeconds = previousTimestamp === undefined
             ? 0
             : Math.max(0, (timestamp - previousTimestamp) / 1_000)
           previousTimestamp = timestamp
-          frameFiber = Effect.runFork(Effect.match(runtime.frame(timestamp, deltaSeconds), {
+          frameFiber = Effect.runFork(Effect.match(frame(timestamp, deltaSeconds), {
             onFailure: () => {
               frameFiber = undefined
               Effect.runFork(mutex.withPermits(1)(stopUnlocked))

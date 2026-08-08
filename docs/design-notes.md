@@ -8,7 +8,7 @@ plan.md §3.10 の設計注意は 1 行しかない。
 > 各体験モジュールからは **devDependency としてのみ**参照される。
 > 実行時依存に混入したら依存ホワイトリストCIで落とす
 
-これが DN-01 である。残りは、責務（「1秒で起動する糊」）と検証（「自身の最小E2E」）と
+これが DN-01 である。残りは、責務（「1秒で起動する糊」）と検証（「共通ライフサイクルの決定論テスト」）と
 移植元（「なし（新規）。E2E環境の知見を流用」）から導かれる要件を、
 同じ形式に展開したものである。
 
@@ -408,8 +408,8 @@ mc-sim の `clampFrameDelta` で 1 回クランプして渡す。
 
 **唯一複製しているのは定数 1 個**、`FIRST_FRAME_DELTA_SECS = 0.016`（boot の 1 フレーム目用）。
 前フレームが無いので差が計算できず、値が要る。関数 1 個より定数 1 個のほうが
-複製として遥かに小さく、`domain/kernel-vocabulary.ts` と同じ「mc-sim 公開時に削除」の
-規律の下に置いてある。
+複製として遥かに小さい。mc-kernel の語彙は公開済みパッケージから直接 import しているため、
+この定数は kernel mirror の残骸ではなく、boot の first-frame semantics に属するローカル定数である。
 
 ### 書くべき回帰テスト
 
@@ -548,10 +548,10 @@ e2e/gameplay/new-world-regression.e2e.ts:22-27
 
 | テスト名 | 場所 | 状態 |
 | --- | --- | --- |
-| **（要追加）** `the minimal E2E boots, moves, and screenshots` | plan.md §3.10 の検証。**完了条件** | E2E 一式が未実装（[testing.md](./testing.md) §2） |
-| **（要追加）** `the E2E drives input through mc-render's virtual input, never through pointer lock` | 同上 | |
-| **（要追加）** `playwright.config.ts runs with 1 worker and SwiftShader args` | E2E 導入時 | 参照実装の `:31-42` を移植 |
-| **（要追加）** `no FPS assertion appears in this repository's E2E` | E2E 導入時 | ソース走査 |
+| ブラウザプレビューの共通ライフサイクル | canvas・RAF・再起動・停止・後始末 | 実装済 `application/browser-preview.ts`。実DOM/WebGLとゲーム挙動のE2Eは mc-compose が所有 |
+| `the E2E drives input through mc-render's virtual input, never through pointer lock` | mc-compose | 実装済 `e2e/end-journey.e2e.ts` |
+| `playwright.config.ts runs with 1 worker and SwiftShader args` | mc-compose | 実装済 `playwright.config.ts` |
+| `no FPS assertion appears in this repository's E2E` | mc-playground-kit | ブラウザE2Eを所有しないため対象外 |
 | `does no clamping of its own` / `touches the parent repositories in causal order` 他 | `test/playground.test.ts` | 済（Node で全部検証していること自体がこの DN の実践） |
 
 ---

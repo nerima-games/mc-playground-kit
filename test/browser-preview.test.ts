@@ -139,6 +139,37 @@ describe('browser preview', () => {
     }),
   )
 
+  it.effect('captures the frame handler once for the RAF loop', () =>
+    Effect.gen(function* () {
+      const dom = fakeDom()
+      const animation = fakeScheduler()
+      const frames: Array<number> = []
+      let frameReads = 0
+      const preview = yield* makeBrowserPreview({
+        container: dom.container,
+        createCanvas: () => dom.canvas,
+        scheduler: animation.scheduler,
+        startRuntime: () => Effect.succeed({
+          get frame() {
+            frameReads += 1
+            return (timestamp: number) => Effect.sync(() => { frames.push(timestamp) })
+          },
+          stop: Effect.void,
+        } satisfies BrowserPreviewRuntime),
+      })
+
+      yield* preview.start
+      animation.runNext(100)
+      yield* Effect.yieldNow()
+      animation.runNext(116)
+      yield* Effect.yieldNow()
+
+      expect(frames).toStrictEqual([100, 116])
+      expect(frameReads).toBe(1)
+      yield* preview.stop
+    }),
+  )
+
   it.effect('interrupts an active frame before releasing runtime resources', () =>
     Effect.gen(function* () {
       const dom = fakeDom()
@@ -216,6 +247,217 @@ describe('browser preview', () => {
       expect(yield* handle.isRunning).toBe(false)
       expect(dom.children).toStrictEqual([dom.canvas])
       expect(Option.isNone(yield* preview.current)).toBe(true)
+    }),
+  )
+
+  it.effect('uses the real browser scheduler when none is injected', () =>
+    Effect.gen(function* () {
+      const dom = fakeDom()
+      const requested: Array<number> = []
+      const cancelled: Array<number> = []
+      let nextId = 0
+      const fakeWindow = {
+        requestAnimationFrame: () => {
+          nextId += 1
+          requested.push(nextId)
+          return nextId
+        },
+        cancelAnimationFrame: (id: number) => { cancelled.push(id) },
+      }
+      const originalWindow = (globalThis as { window?: unknown }).window
+      ;(globalThis as { window?: unknown }).window = fakeWindow
+      try {
+        const preview = yield* makeBrowserPreview({
+          container: dom.container,
+          createCanvas: () => dom.canvas,
+          startRuntime: () => Effect.succeed({
+            frame: () => Effect.void,
+            stop: Effect.void,
+          }),
+        })
+        yield* preview.start
+        expect(requested).toStrictEqual([1])
+        yield* preview.stop
+        expect(cancelled).toStrictEqual([1])
+      } finally {
+        ;(globalThis as { window?: unknown }).window = originalWindow
+      }
+    }),
+  )
+
+  it.effect('fails fast when the signal is already aborted before start', () =>
+    Effect.gen(function* () {
+      const dom = fakeDom()
+      const controller = new AbortController()
+      controller.abort('reason-x')
+      const preview = yield* makeBrowserPreview({
+        container: dom.container,
+        createCanvas: () => dom.canvas,
+        signal: controller.signal,
+        scheduler: fakeScheduler().scheduler,
+        startRuntime: () => Effect.succeed({ stop: Effect.void }),
+      })
+
+      const result = yield* Effect.either(preview.start)
+      expect(Either.isLeft(result)).toBe(true)
+      if (Either.isRight(result)) return
+      expect(result.left).toMatchObject({ cause: 'reason-x', rollbackFailures: [] })
+      expect(dom.children).toHaveLength(0)
+    }),
+  )
+
+  it.effect('reports accumulated rollback failures when the runtime fails to stop', () =>
+    Effect.gen(function* () {
+      const dom = fakeDom()
+      const preview = yield* makeBrowserPreview({
+        container: dom.container,
+        createCanvas: () => dom.canvas,
+        scheduler: fakeScheduler().scheduler,
+        startRuntime: () => Effect.succeed({
+          stop: Effect.fail('runtime-stop-boom'),
+        }),
+      })
+
+      yield* preview.start
+      const result = yield* Effect.either(preview.stop)
+      expect(Either.isLeft(result)).toBe(true)
+      if (Either.isRight(result)) return
+      expect(result.left).toMatchObject({
+        _tag: 'BrowserPreviewStopError',
+        failures: ['runtime-stop-boom'],
+      })
+    }),
+  )
+
+  it.effect('stops the generation when a frame effect fails', () =>
+    Effect.gen(function* () {
+      const dom = fakeDom()
+      const animation = fakeScheduler()
+      const preview = yield* makeBrowserPreview({
+        container: dom.container,
+        createCanvas: () => dom.canvas,
+        scheduler: animation.scheduler,
+        startRuntime: () => Effect.succeed({
+          frame: () => Effect.fail('frame-boom'),
+          stop: Effect.void,
+        }),
+      })
+
+      const handle = yield* preview.start
+      animation.runNext(100)
+      yield* Effect.yieldNow()
+      yield* Effect.yieldNow()
+      expect(yield* handle.isRunning).toBe(false)
+      expect(Option.isNone(yield* preview.current)).toBe(true)
+    }),
+  )
+
+  it.effect('creates its own canvas via document.createElement when no factory is given', () =>
+    Effect.gen(function* () {
+      const dom = fakeDom()
+      const created: Array<string> = []
+      const rawCanvas = {
+        parentNode: undefined as unknown,
+        remove() {
+          rawCanvas.parentNode = undefined
+        },
+      }
+      const fakeCanvas = rawCanvas as unknown as HTMLCanvasElement
+      const fakeDocument = {
+        createElement: (tag: string) => {
+          created.push(tag)
+          return fakeCanvas
+        },
+      }
+      const originalDocument = (globalThis as { document?: unknown }).document
+      ;(globalThis as { document?: unknown }).document = fakeDocument
+      try {
+        const preview = yield* makeBrowserPreview({
+          container: dom.container,
+          scheduler: fakeScheduler().scheduler,
+          startRuntime: () => Effect.succeed({ stop: Effect.void }),
+        })
+        const handle = yield* preview.start
+        expect(created).toStrictEqual(['canvas'])
+        expect(handle.canvas).toBe(fakeCanvas)
+      } finally {
+        ;(globalThis as { document?: unknown }).document = originalDocument
+      }
+    }),
+  )
+
+  it.effect('captures a cleanup that throws into rollback failures', () =>
+    Effect.gen(function* () {
+      const dom = fakeDom()
+      const boom = new Error('cleanup-boom')
+      const preview = yield* makeBrowserPreview({
+        container: dom.container,
+        createCanvas: () => dom.canvas,
+        scheduler: fakeScheduler().scheduler,
+        startRuntime: (surface) => Effect.sync(() => {
+          surface.onCleanup(() => { throw boom })
+          return { stop: Effect.void }
+        }),
+      })
+
+      yield* preview.start
+      const result = yield* Effect.either(preview.stop)
+      expect(Either.isLeft(result)).toBe(true)
+      if (Either.isRight(result)) return
+      expect(result.left).toMatchObject({ _tag: 'BrowserPreviewStopError', failures: [boom] })
+    }),
+  )
+
+  it.effect('is idempotent when the same handle.stop is awaited twice directly', () =>
+    Effect.gen(function* () {
+      const dom = fakeDom()
+      let stops = 0
+      const preview = yield* makeBrowserPreview({
+        container: dom.container,
+        createCanvas: () => dom.canvas,
+        scheduler: fakeScheduler().scheduler,
+        startRuntime: () => Effect.succeed({
+          stop: Effect.sync(() => { stops += 1 }),
+        }),
+      })
+
+      const handle = yield* preview.start
+      yield* handle.stop
+      yield* handle.stop
+      expect(stops).toBe(1)
+    }),
+  )
+
+  it.effect('ignores a frame callback that fires after stop (RAF/cancel race)', () =>
+    Effect.gen(function* () {
+      const dom = fakeDom()
+      const captured: { callback: FrameRequestCallback | undefined } = { callback: undefined }
+      const cancelled: Array<number> = []
+      const scheduler: BrowserFrameScheduler = {
+        request: (callback) => {
+          captured.callback = callback
+          return 1
+        },
+        cancel: (id) => { cancelled.push(id) },
+      }
+      const frames: Array<number> = []
+      const preview = yield* makeBrowserPreview({
+        container: dom.container,
+        createCanvas: () => dom.canvas,
+        scheduler,
+        startRuntime: () => Effect.succeed({
+          frame: (timestamp) => Effect.sync(() => { frames.push(timestamp) }),
+          stop: Effect.void,
+        }),
+      })
+
+      yield* preview.start
+      yield* preview.stop
+      expect(cancelled).toStrictEqual([1])
+      const stale = captured.callback
+      if (stale === undefined) throw new Error('scheduler never requested a frame')
+      stale(999)
+      expect(frames).toStrictEqual([])
     }),
   )
 })

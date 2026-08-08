@@ -7,11 +7,10 @@
  *
  * Two reasons, one temporary and one permanent.
  *
- * TEMPORARY: nothing is published. plan.md §6 Step 3 publishes bottom-up, so
- * `@nerima-games/mc-worldgen`, `-sim` and `-render` cannot be imported yet (see
- * `domain/kernel-vocabulary.ts`). Ports let the harness be written, typechecked
- * and tested in full today, against fakes, and repointed at the real packages
- * later by writing Layers — not by editing this repository's logic.
+ * The preview boundary uses the published kernel contract. Higher-level
+ * packages remain behind local ports so the harness can be written, typechecked
+ * and tested against fakes, then repointed by writing Layers rather than editing
+ * this repository's logic.
  *
  * PERMANENT, and the reason these will stay Ports after publication: the whole
  * of `application/playground.ts` must be runnable in Node with no DOM, no WebGL
@@ -53,12 +52,12 @@
  * back several independent instances — which is what a harness capable of
  * standing two previews side by side in one process actually needs.
  */
+import type { CameraPoseSnapshot, DeltaTimeSecs } from '@nerima-games/mc-kernel'
 import { Context, Effect } from 'effect'
 import type { FlatWorldSpec, SpawnKit } from '../domain/launch-options'
-import type { CameraPoseSnapshot, DeltaTimeSecs } from '../domain/kernel-vocabulary'
 
 // ---------------------------------------------------------------------------
-// mc-worldgen
+// Ports for mc-worldgen
 // ---------------------------------------------------------------------------
 
 /**
@@ -82,7 +81,7 @@ export class WorldProviderPort extends Context.Tag('@nerima-games/mc-playground-
 >() {}
 
 // ---------------------------------------------------------------------------
-// mc-sim
+// Ports for mc-sim
 // ---------------------------------------------------------------------------
 
 /**
@@ -114,7 +113,7 @@ export class SimulationPort extends Context.Tag('@nerima-games/mc-playground-kit
 >() {}
 
 // ---------------------------------------------------------------------------
-// mc-render (1 of 2): drawing
+// Ports for mc-render (1 of 2): drawing
 // ---------------------------------------------------------------------------
 
 /**
@@ -139,7 +138,7 @@ export class RendererPort extends Context.Tag('@nerima-games/mc-playground-kit/R
 >() {}
 
 // ---------------------------------------------------------------------------
-// mc-render (2 of 2): runtime input — OWNED BY mc-render, see the module header
+// Ports for mc-render (2 of 2): runtime input — OWNED BY mc-render, see the module header
 // ---------------------------------------------------------------------------
 
 /**

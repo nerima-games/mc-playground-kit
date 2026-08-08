@@ -112,12 +112,12 @@ plan.md §3.10 の依存は「kernel / worldgen / sim / render（入力は rende
 
 | 依存先 | 何をもらうか | 現状 |
 | --- | --- | --- |
-| `mc-kernel` | 共有語彙。**どのリポジトリからも import 可**。ただし `package.json#dependencies` への記載は必要 | `domain/kernel-vocabulary.ts` に暫定ミラー |
+| `mc-kernel` | 公開済みの共有語彙。**どのリポジトリからも import 可**。`package.json#dependencies` への記載が必要 | 公開 package から直接 import |
 | `mc-worldgen` | ミニ平地ワールドの生成 | `WorldProviderPort` として注入待ち |
 | `mc-sim` | プレイヤー状態・スポーン・tick・`CameraPoseSnapshot` の読み取り | `SimulationPort` として注入待ち |
 | `mc-render` | 描画一式 **と実行時入力サービス** | `RendererPort` / `InputPort` として注入待ち |
 
-**現在の `dependencies` は `effect` のみ。** 4 つともまだ publish されていないため
+`@nerima-games/mc-kernel` は公開済みの直接依存である。残りの依存は publish 境界を保つため
 （plan.md §6 Step 3 の bottom-up publish-then-pin）、必要な surface は
 `application/preview-ports.ts` に Port として宣言し、実装は Layer で注入する形にしてある。
 publish 後も Port のままにする理由は [design-notes.md](./design-notes.md) DN-07。
