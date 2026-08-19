@@ -2,8 +2,8 @@
  * REGRESSION: the harness boots in causal order, tears down in reverse, and
  * relaunching is as clean as launching.
  *
- * plan.md §3.8 names deadlocks and leftover fibers on a SECOND world load as the
- * reference implementation's worst bug class, and plan.md §3.10 makes this
+ * Relaunch deadlocks and leftover fibers on a SECOND world load are the
+ * lifecycle's worst bug class, and this package makes
  * repository the one whose 起動速度と安定性 every other preview depends on. A
  * preview harness is the sharpest version of that problem: relaunching is what
  * it is FOR. So every test here that matters exercises a stop/start cycle — a
@@ -14,10 +14,8 @@
  * ---------------------------------------------------------------------------
  *
  * `vitest.config.ts` fixes `environment: 'node'`, and the four heavyweight
- * surfaces are Ports (`application/preview-ports.ts`). plan.md §3.10's
- * carried-over knowledge is that the E2E environment is hostile — SwiftShader
- * software rendering, and no pointer lock at all
- * (`ts-minecraft/e2e/gameplay/player-controls.e2e.ts:208`). Boot order, teardown
+ * surfaces are Ports (`application/preview-ports.ts`). Browser E2E environments
+ * can use SwiftShader software rendering and deny pointer lock. Boot order, teardown
  * order and relaunch safety are exactly the properties that must NOT be verified
  * there, because there they are verified slowly, flakily, and only in the
  * configurations a browser will produce.
@@ -32,7 +30,6 @@ import { BOOT_PHASE_ORDER } from '../src/domain/boot-phase'
 import { DEFAULT_FLAT_WORLD, DEFAULT_SPAWN_KIT, type PreviewModule } from '../src/domain/launch-options'
 import {
   ClockPort,
-  DeltaTimeSecs,
   EpochMillis,
   MonotonicTimeSecs,
   StageId,
@@ -73,7 +70,7 @@ const POSE: CameraPoseSnapshot = {
  * different repositories' surfaces are touched is what these tests are about,
  * and four separate logs could not express it.
  */
-const makeFakes = (costs: PortCosts = CHEAP) =>
+const makeFakes = (costs: PortCosts = CHEAP, failInputDetach = false) =>
   Effect.gen(function* () {
     const events = yield* Ref.make<ReadonlyArray<string>>([])
     const nowSecs = yield* Ref.make(0)
@@ -105,7 +102,7 @@ const makeFakes = (costs: PortCosts = CHEAP) =>
       }),
       Layer.succeed(InputPort, {
         attach: step('input.attach', costs.input),
-        detach: step('input.detach', 0),
+        detach: failInputDetach ? Effect.die('input.detach failure') : step('input.detach', 0),
       }),
     )
 
@@ -149,6 +146,8 @@ describe('boot', () => {
       // already rendered, which is why `first-frame` is a budgeted phase.
       expect(yield* fakes.framesRendered).toBe(1)
       expect(yield* handle.framesRendered).toBe(1)
+      expect(yield* handle.framesDropped).toBe(0)
+      expect(yield* handle.secondsLostToClamp).toBe(0)
 
       yield* handle.stop
     }).pipe(Effect.provide(PlaygroundLayer)),
@@ -244,33 +243,35 @@ describe('frames', () => {
 
       const handle = yield* launchPlayground({ modules: [probe.module] }).pipe(Effect.provide(fakes.layer))
 
-      yield* handle.submitFrame(DeltaTimeSecs(0.02))
-      yield* handle.submitFrame(DeltaTimeSecs(0.03))
+      yield* handle.submitFrame(MonotonicTimeSecs(1.02))
+      yield* handle.submitFrame(MonotonicTimeSecs(1.05))
       yield* Deferred.await(probe.reached)
 
-      expect(yield* probe.seen).toStrictEqual([0.016, 0.02, 0.03])
+      const seen = yield* probe.seen
+      expect(seen).toHaveLength(3)
+      expect(seen[0]).toBe(0.016)
+      expect(seen[1]).toBe(0.016)
+      expect(seen[2]).toBeCloseTo(0.03)
       expect(yield* fakes.framesRendered).toBe(3)
 
       yield* handle.stop
     }).pipe(Effect.provide(PlaygroundLayer)),
   )
 
-  it.effect('does no clamping of its own — mc-sim owns the delta clamp', () =>
+  it.effect('derives and clamps frame deltas through mc-sim', () =>
     Effect.gen(function* () {
-      // plan.md §3.8 / mc-sim/domain/frame-timing.ts own `min(max(0.001, raw),
-      // 0.05)`. A second copy here would be a second thing to keep in sync, and
-      // the symptom of divergence — the player walking through the floor after a
-      // preview was backgrounded — would look like a physics bug. A 30-second
-      // delta arriving here is passed straight through, because the preview's
-      // frame driver was supposed to clamp it.
+      // mc-sim owns timestamp-to-delta conversion and clamps a long gap to 0.05.
+      // The playground only forwards the monotonic timestamp, so the two
+      // implementations cannot drift apart.
       const fakes = yield* makeFakes()
-      const probe = yield* recordingStage('preview:tick', 2)
+      const probe = yield* recordingStage('preview:tick', 3)
 
       const handle = yield* launchPlayground({ modules: [probe.module] }).pipe(Effect.provide(fakes.layer))
-      yield* handle.submitFrame(DeltaTimeSecs(30))
+      yield* handle.submitFrame(MonotonicTimeSecs(1))
+      yield* handle.submitFrame(MonotonicTimeSecs(31))
       yield* Deferred.await(probe.reached)
 
-      expect(yield* probe.seen).toStrictEqual([0.016, 30])
+      expect(yield* probe.seen).toStrictEqual([0.016, 0.016, 0.05])
 
       yield* handle.stop
     }).pipe(Effect.provide(PlaygroundLayer)),
@@ -304,8 +305,8 @@ describe('frames', () => {
       }
 
       const handle = yield* launchPlayground({ modules: [exploding] }).pipe(Effect.provide(fakes.layer))
-      yield* handle.submitFrame(DeltaTimeSecs(0.02))
-      yield* handle.submitFrame(DeltaTimeSecs(0.02))
+      yield* handle.submitFrame(MonotonicTimeSecs(1.02))
+      yield* handle.submitFrame(MonotonicTimeSecs(1.04))
       yield* Deferred.await(reached)
 
       expect(yield* handle.isRunning).toBe(true)
@@ -317,7 +318,7 @@ describe('frames', () => {
 
   it.effect('the camera pose is read from the simulation, and cannot be written back', () =>
     Effect.gen(function* () {
-      // plan.md §5.1-2: mc-sim owns the pose, mc-render mirrors it. A harness
+      // mc-sim owns the pose, mc-render mirrors it. A harness
       // sitting between the two is exactly where a convenient `setCameraPose`
       // would be added, and exactly where it would undo the fix.
       const fakes = yield* makeFakes()
@@ -329,9 +330,11 @@ describe('frames', () => {
       expect(Object.keys(handle).sort()).toStrictEqual([
         'budget',
         'cameraPose',
+        'framesDropped',
         'framesRendered',
         'isRunning',
         'options',
+        'secondsLostToClamp',
         'stageOrderWarnings',
         'stop',
         'submitFrame',
@@ -350,7 +353,7 @@ describe('frames', () => {
 describe('teardown', () => {
   it.effect('REGRESSION: input is detached FIRST, before the renderer it fires into', () =>
     Effect.gen(function* () {
-      // plan.md §3.9: 入力は `window` にキー登録. A window listener outlives
+      // 入力は `window` に登録される. A window listener outlives
       // whatever added it, so the first thing a teardown must do is make the
       // outside world stop talking to a half-detached preview. The world goes
       // last, because it is the only participant that persists.
@@ -380,6 +383,21 @@ describe('teardown', () => {
     }).pipe(Effect.provide(PlaygroundLayer)),
   )
 
+  it.effect('continues teardown after an individual port fails', () =>
+    Effect.gen(function* () {
+      const fakes = yield* makeFakes(CHEAP, true)
+      const handle = yield* launchPlayground().pipe(Effect.provide(fakes.layer))
+
+      yield* handle.stop
+
+      expect((yield* fakes.events).slice(4)).toStrictEqual([
+        'renderer.detach',
+        'sim.stop',
+        'world.close',
+      ])
+    }).pipe(Effect.provide(PlaygroundLayer)),
+  )
+
   it.effect('frames submitted after stop() are a silent no-op', () =>
     Effect.gen(function* () {
       const fakes = yield* makeFakes()
@@ -388,8 +406,8 @@ describe('teardown', () => {
 
       // A stopped preview ignoring a stray requestAnimationFrame callback is the
       // correct behaviour. It must not throw, and it must not resurrect.
-      yield* handle.submitFrame(DeltaTimeSecs(0.02))
-      yield* handle.submitFrame(DeltaTimeSecs(0.02))
+      yield* handle.submitFrame(MonotonicTimeSecs(1.02))
+      yield* handle.submitFrame(MonotonicTimeSecs(1.04))
 
       expect(yield* handle.isRunning).toBe(false)
       expect(yield* fakes.framesRendered).toBe(1)
@@ -460,23 +478,28 @@ describe('relaunch', () => {
       // own.
       const fakes = yield* makeFakes()
       const stale = yield* recordingStage('stale:tick', 1)
-      const fresh = yield* recordingStage('fresh:tick', 2)
+      const fresh = yield* recordingStage('fresh:tick', 3)
 
       const staleHandle = yield* launchPlayground({ modules: [stale.module] }).pipe(Effect.provide(fakes.layer))
       yield* Deferred.await(stale.reached)
 
       const freshHandle = yield* launchPlayground({ modules: [fresh.module] }).pipe(Effect.provide(fakes.layer))
-      yield* staleHandle.submitFrame(DeltaTimeSecs(0.04))
-      yield* freshHandle.submitFrame(DeltaTimeSecs(0.02))
+      yield* staleHandle.submitFrame(MonotonicTimeSecs(1.04))
+      yield* freshHandle.submitFrame(MonotonicTimeSecs(1.02))
+      yield* freshHandle.submitFrame(MonotonicTimeSecs(1.04))
       yield* Deferred.await(fresh.reached)
 
-      // Only the boot frame. The 0.04 offered to the dead handle went nowhere.
+      // Only the boot frame. The timestamp offered to the dead handle went nowhere.
       expect(yield* stale.seen).toStrictEqual([0.016])
-      expect(yield* fresh.seen).toStrictEqual([0.016, 0.02])
+      const freshSeen = yield* fresh.seen
+      expect(freshSeen).toHaveLength(3)
+      expect(freshSeen[0]).toBe(0.016)
+      expect(freshSeen[1]).toBe(0.016)
+      expect(freshSeen[2]).toBeCloseTo(0.02)
       // Frame counting restarted: the second preview is a new world, not a
       // continuation of the first.
       expect(yield* staleHandle.framesRendered).toBe(0)
-      expect(yield* freshHandle.framesRendered).toBe(2)
+      expect(yield* freshHandle.framesRendered).toBe(3)
 
       yield* freshHandle.stop
     }).pipe(Effect.provide(PlaygroundLayer)),
@@ -516,7 +539,7 @@ describe('relaunch', () => {
       // ...and it is still a LIVE preview: a frame submitted after the stale
       // stop reaches a renderer that was never detached and a world that was
       // never closed.
-      yield* liveHandle.submitFrame(DeltaTimeSecs(0.02))
+      yield* liveHandle.submitFrame(MonotonicTimeSecs(1.02))
       yield* Deferred.await(probe.reached)
       expect(yield* liveHandle.framesRendered).toBe(2)
 
@@ -534,10 +557,10 @@ describe('relaunch', () => {
 
   it.effect('two Layer builds are two independent harnesses', () =>
     Effect.gen(function* () {
-      // plan.md §3.8's DN-09 answer: do not be an app-scoped singleton, then you
-      // need no `reset`. Two previews side by side in one process is a thing a
+      // Keep the service instance-scoped rather than app-scoped, so two previews
+      // side by side in one process need no shared reset operation. This is a
       // preview page legitimately wants, and it is what makes `Layer.effect`
-      // (not `Layer.succeed`) the right call in application/playground.ts.
+      // (not `Layer.succeed`) the right call in application/playground-service.ts.
       //
       // Independent means independent PORTS too, which is why each harness gets
       // its own fakes rather than sharing one Layer. Four Ports are four
@@ -596,7 +619,7 @@ describe('stage order warnings', () => {
   it.effect('surfaces a contradiction between the caller order and the caller constraints', () =>
     Effect.gen(function* () {
       // The harness runs stages in declaration order and does NOT resolve
-      // `after` — mc-compose owns the total order (plan.md §2.3-3). Checking is
+      // `after` — the application composition root owns the total order. Checking is
       // safe where resolving is not: this cannot make a preview disagree with
       // the shipped game, because it never chooses an order.
       const fakes = yield* makeFakes()

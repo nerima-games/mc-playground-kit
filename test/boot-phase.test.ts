@@ -1,7 +1,7 @@
 /**
  * The boot budget.
  *
- * plan.md §3.10 states this repository's requirement as a time — one second —
+ * The repository's startup requirement is a time — one second —
  * and says 全プレビューの開発体験がここの起動速度と安定性に依存する. A requirement
  * that is a number needs a test that is an assertion about that number, or it is
  * an aspiration.
@@ -38,7 +38,7 @@ const exactlyOnBudget: ReadonlyArray<PhaseTiming> = BOOT_PHASE_ORDER.map((phase)
 const fastBoot: ReadonlyArray<PhaseTiming> = BOOT_PHASE_ORDER.map((phase) => timing(phase, 1))
 
 describe('the budget itself', () => {
-  it.effect('is one second — plan.md §3.10 「1秒で起動」', () =>
+  it.effect('is one second — the public startup target 「1秒で起動」', () =>
     Effect.sync(() => {
       expect(BOOT_BUDGET_MILLIS).toBe(1000)
     }),
@@ -75,7 +75,7 @@ describe('the budget itself', () => {
     }),
   )
 
-  it.effect('input is a phase of its own, however cheap — plan.md §2.3-2', () =>
+  it.effect('input is a phase of its own, however cheap', () =>
     Effect.sync(() => {
       // Ownership of the runtime input service is the constitutional rule of
       // this repository. A line item with a name and a number is harder to
@@ -95,9 +95,9 @@ describe('the budget itself', () => {
 
   it.effect('REGRESSION: the whole budget is smaller than the reference session could ever be', () =>
     Effect.sync(() => {
-      // ts-minecraft/packages/app/application/main/session-loading-gates-state.ts:1
+      // The reference loading screen used a 2500 ms minimum.
       //   const MIN_LOADING_SCREEN_DURATION_MS = 2500
-      // and session-lifecycle-startup.ts:104-105 waits on a frame-rate gate
+      // A longer loading-screen or frame-rate gate would exceed this harness's
       // (10 consecutive 100ms samples at 120fps, 8s timeout) BEFORE hiding the
       // loading screen. A preview cannot inherit that path and be relaunched
       // dozens of times an hour, which is the entire reason this repository is
@@ -289,7 +289,7 @@ describe('describeBootVerdict', () => {
   it.effect('says OVER and names both the missing and the overrunning phases', () =>
     Effect.sync(() => {
       // The budget only changes behaviour if somebody sees it, so this string is
-      // logged on every boot (application/playground.ts) rather than waiting to
+      // logged on every boot (application/playground-service.ts) rather than waiting to
       // be asked for.
       const line = describeBootVerdict(
         classifyBootTimings([timing('world', 2000), timing('resolve-options', 1)]),

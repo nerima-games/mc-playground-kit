@@ -1,6 +1,7 @@
 /* oxlint-disable curly, func-names, max-statements, no-magic-numbers, no-undefined, no-use-before-define, sort-imports, sort-keys -- Test fixtures favor direct state assertions over production-style decomposition. */
 import { describe, expect, it } from '@effect/vitest'
 import { Deferred, Effect, Either, Option } from 'effect'
+import type { DeltaTimeSecs } from '@nerima-games/mc-kernel'
 import {
   makeBrowserPreview,
   type BrowserFrameScheduler,
@@ -56,7 +57,7 @@ describe('browser preview', () => {
   it.effect('owns one canvas/runtime and restarts as a fresh generation', () =>
     Effect.gen(function* () {
       const dom = fakeDom()
-      const frames: Array<[number, number]> = []
+      const frames: Array<number> = []
       let starts = 0
       let stops = 0
       let listenerCleanup = 0
@@ -69,13 +70,15 @@ describe('browser preview', () => {
           starts += 1
           surface.onCleanup(() => { listenerCleanup += 1 })
           return {
-            frame: (timestamp, delta) => Effect.sync(() => { frames.push([timestamp, delta]) }),
+            frame: (deltaSeconds) => Effect.sync(() => { frames.push(deltaSeconds) }),
             stop: Effect.sync(() => { stops += 1 }),
           } satisfies BrowserPreviewRuntime
         }),
       })
 
       const first = yield* preview.start
+      const current = yield* preview.current
+      expect(Option.isSome(current) && current.value === first).toBe(true)
       const duplicate = yield* preview.start
       expect(duplicate).toBe(first)
       expect(starts).toBe(1)
@@ -85,7 +88,9 @@ describe('browser preview', () => {
       yield* Effect.yieldNow()
       animation.runNext(116)
       yield* Effect.yieldNow()
-      expect(frames).toStrictEqual([[100, 0], [116, 0.016]])
+      animation.runNext(1_000)
+      yield* Effect.yieldNow()
+      expect(frames).toStrictEqual([0.016, 0.016, 0.05])
 
       const second = yield* preview.restart
       expect(second).not.toBe(first)
@@ -109,15 +114,15 @@ describe('browser preview', () => {
       const dom = fakeDom()
       const animation = fakeScheduler()
       const firstFrame = yield* Deferred.make<void>()
-      const frames: Array<number> = []
+      const frames: Array<DeltaTimeSecs> = []
       const preview = yield* makeBrowserPreview({
         container: dom.container,
         createCanvas: () => dom.canvas,
         scheduler: animation.scheduler,
         startRuntime: () => Effect.succeed({
-          frame: (timestamp) => Effect.gen(function* () {
-            frames.push(timestamp)
-            if (timestamp === 100) yield* Deferred.await(firstFrame)
+          frame: (deltaSeconds) => Effect.gen(function* () {
+            frames.push(deltaSeconds)
+            if (frames.length === 1) yield* Deferred.await(firstFrame)
           }),
           stop: Effect.void,
         }),
@@ -126,15 +131,18 @@ describe('browser preview', () => {
       yield* preview.start
       animation.runNext(100)
       yield* Effect.yieldNow()
-      expect(frames).toStrictEqual([100])
-      expect(animation.callbacks.size).toBe(0)
+      expect(frames).toStrictEqual([0.016])
+      expect(animation.callbacks.size).toBe(1)
 
+      animation.runNext(116)
+      yield* Effect.yieldNow()
+      expect(frames).toStrictEqual([0.016])
       yield* Deferred.succeed(firstFrame, undefined)
       yield* Effect.yieldNow()
       expect(animation.callbacks.size).toBe(1)
-      animation.runNext(116)
+      animation.runNext(132)
       yield* Effect.yieldNow()
-      expect(frames).toStrictEqual([100, 116])
+      expect(frames).toStrictEqual([0.016, 0.016])
       yield* preview.stop
     }),
   )
@@ -143,7 +151,7 @@ describe('browser preview', () => {
     Effect.gen(function* () {
       const dom = fakeDom()
       const animation = fakeScheduler()
-      const frames: Array<number> = []
+      const frames: Array<DeltaTimeSecs> = []
       let frameReads = 0
       const preview = yield* makeBrowserPreview({
         container: dom.container,
@@ -152,7 +160,7 @@ describe('browser preview', () => {
         startRuntime: () => Effect.succeed({
           get frame() {
             frameReads += 1
-            return (timestamp: number) => Effect.sync(() => { frames.push(timestamp) })
+            return (deltaSeconds: DeltaTimeSecs) => Effect.sync(() => { frames.push(deltaSeconds) })
           },
           stop: Effect.void,
         } satisfies BrowserPreviewRuntime),
@@ -164,7 +172,7 @@ describe('browser preview', () => {
       animation.runNext(116)
       yield* Effect.yieldNow()
 
-      expect(frames).toStrictEqual([100, 116])
+      expect(frames).toStrictEqual([0.016, 0.016])
       expect(frameReads).toBe(1)
       yield* preview.stop
     }),
@@ -440,13 +448,13 @@ describe('browser preview', () => {
         },
         cancel: (id) => { cancelled.push(id) },
       }
-      const frames: Array<number> = []
+      const frames: Array<DeltaTimeSecs> = []
       const preview = yield* makeBrowserPreview({
         container: dom.container,
         createCanvas: () => dom.canvas,
         scheduler,
         startRuntime: () => Effect.succeed({
-          frame: (timestamp) => Effect.sync(() => { frames.push(timestamp) }),
+          frame: (deltaSeconds) => Effect.sync(() => { frames.push(deltaSeconds) }),
           stop: Effect.void,
         }),
       })

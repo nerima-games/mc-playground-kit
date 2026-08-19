@@ -6,7 +6,7 @@
  * Why a boot budget is a domain concept here and nowhere else
  * ---------------------------------------------------------------------------
  *
- * plan.md §3.10 states this repository's purpose as a time:
+ * The playground's startup target is a time budget:
  *
  *   「ミニ平地ワールド + カメラ + レンダラ + 入力」を**1秒で起動**する糊。
  *   全プレビューの開発体験がここの起動速度と安定性に依存する —
@@ -21,35 +21,9 @@
  * What "one second" is being compared against
  * ---------------------------------------------------------------------------
  *
- * The reference implementation's shipped session is deliberately, structurally
- * slower, and its own constants say so:
- *
- *   ts-minecraft/packages/app/application/main/session-loading-gates-state.ts:1
- *     const MIN_LOADING_SCREEN_DURATION_MS = 2500
- *   ts-minecraft/packages/app/application/main/session-loading-gates-state.ts:2-5
- *     const INITIAL_FPS_GATE_TARGET = 120
- *     const INITIAL_FPS_GATE_TIMEOUT_MS = 8_000
- *     const INITIAL_FPS_GATE_POLL_MS = 100
- *     const INITIAL_FPS_GATE_STABLE_SAMPLES = 10
- *
- * and the startup path waits on that gate before it will hide the loading
- * screen at all:
- *
- *   ts-minecraft/packages/app/application/main/session-lifecycle-startup.ts:104-105
- *     yield* waitForInitialFrameRate(runtimeParams.hud.fpsElement)
- *     yield* loadingScreen.hide()
- *
- * Ten consecutive 100 ms samples at 120 fps is a floor of one full second of
- * polling on top of a 2.5-second minimum loading screen, with an eight-second
- * timeout above it. For a game that is correct: a player launches a world a few
- * times a day, and a stable frame rate before the first visible frame is worth
- * the wait.
- *
- * For a preview it is fatal. A developer iterating on a redstone rule relaunches
- * dozens of times an hour, and 2.5 seconds of enforced waiting per relaunch is
- * the difference between checking a hypothesis and not bothering. The kit's
- * whole reason to exist is that it does NOT inherit this path — no minimum
- * loading screen, no frame-rate gate, no session lifecycle. One second, total.
+ * A preview must make the first interaction quick and repeatable. This budget
+ * is intentionally independent from any loading-screen or frame-rate policy in
+ * a shipped game; the playground measures its own phases instead.
  *
  * ---------------------------------------------------------------------------
  * Why per-phase budgets and not just a total
@@ -152,8 +126,8 @@ export const elapsedMillis = (fromSecs: number, toSecs: number): DurationMillis 
  *   first-frame      everyone      one frame end to end, so the preview is live
  *
  * `input` is a phase of its own despite being the cheapest, because its
- * ownership is the constitutional rule of this repository (plan.md §2.3-2): the
- * runtime input service belongs to mc-render, and this harness only asks for it.
+ * ownership is part of the repository boundary: the runtime input service
+ * belongs to mc-render, and this harness only asks for it.
  * A phase that is visibly a line item, with a name and a number, is harder to
  * quietly reimplement locally than a step folded into `renderer`.
  */
@@ -188,14 +162,13 @@ export const BOOT_PHASE_ORDER: ReadonlyArray<BootPhase> = [
  *
  * The shape of the allocation reflects where the time provably goes:
  *
- * - `world` (400) is the largest. Generating a 3x3 chunk plate is real work, and
- *   plan.md §3.7 puts ~13k LOC of terrain generation behind it.
+ * - `world` (400) is the largest. Generating a 3x3 chunk plate is real work.
  * - `renderer` (300) is next. Compiling shaders and uploading a chunk mesh is
- *   the other unavoidable cost; plan.md §3.9's post-FX chain is deliberately
- *   NOT in a preview's default path.
+ *   the other unavoidable cost; post-processing is deliberately NOT in a
+ *   preview's default path.
  * - `first-frame` (100) is one frame's worth of everything, generously. The
- *   reference clamps a frame at 50 ms (plan.md §3.4), so 100 ms allows the
- *   cold-path frame to be twice the worst legal warm frame.
+ *   runtime clamps a frame at 50 ms, so 100 ms allows the cold-path frame to
+ *   be twice the worst legal warm frame.
  * - `resolve-options` (5) is a pure function over a small record. It is listed
  *   at all so that "the options bag got expensive" is a visible event rather
  *   than a rounding error inside another phase.
@@ -218,7 +191,7 @@ export const BOOT_PHASE_BUDGET_MILLIS: Readonly<Record<BootPhase, DurationMillis
   world: DurationMillis(WORLD_BUDGET_MILLIS),
 }
 
-/** See plan.md §3.10's 「1秒で起動」, as a number. */
+/** The public one-second startup target, represented as a number. */
 export const BOOT_BUDGET_MILLIS: DurationMillis = DurationMillis(MILLIS_PER_SECOND)
 
 // ---------------------------------------------------------------------------
@@ -313,7 +286,7 @@ export const classifyBootTimings = (timings: ReadonlyArray<PhaseTiming>): BootBu
  *
  * The budget only changes behaviour if somebody sees it. A number that has to be
  * asked for is a number nobody has ever looked at, so `launchPlayground` logs
- * this on every boot (application/playground.ts).
+ * this on every boot (application/playground-service.ts).
  */
 const formatBootStatus = (verdict: BootBudgetVerdict): string => {
   if (verdict.withinBudget) {

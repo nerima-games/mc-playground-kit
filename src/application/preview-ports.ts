@@ -13,10 +13,10 @@
  * this repository's logic.
  *
  * PERMANENT, and the reason these will stay Ports after publication: the whole
- * of `application/playground.ts` must be runnable in Node with no DOM, no WebGL
- * and no Playwright. plan.md §3.10's carried-over knowledge is that the E2E
- * environment is hostile — SwiftShader software rendering, and no pointer lock
- * at all (`ts-minecraft/e2e/gameplay/player-controls.e2e.ts:208`). Boot order,
+ * of the playground lifecycle (`playground-boot.ts` and `playground-service.ts`)
+ * must be runnable in Node with no DOM, no WebGL
+ * and no Playwright. Browser E2E environments can use software rendering and
+ * deny pointer lock. Boot order,
  * teardown order, relaunch safety and the budget arithmetic are exactly the
  * things that must NOT be verified in that environment, because there they are
  * verified slowly, flakily, and only in the configurations a browser can
@@ -24,20 +24,19 @@
  * `vitest --environment node`.
  *
  * ---------------------------------------------------------------------------
- * On `InputPort` specifically — plan.md §2.3-2
+ * On `InputPort` specifically
  * ---------------------------------------------------------------------------
  *
  * `InputPort` is a Tag declared here and an implementation that is NOT here.
  *
- *   実行時入力サービスは mc-render が所有。kit は devDependency 専用のため、
- *   kit に入力を置くと本番ゲームから入力が消える。 (plan.md §2.3-2)
+ *   実行時入力サービスは mc-render が所有する。kit はそのライフサイクル
+ *   境界だけを公開し、入力実装を複製しない。
  *
  * mc-playground-kit is referenced only as a devDependency and is not in the
  * release build. An input service living in this repository would therefore be
  * absent from the shipped game: the game would boot, render, and respond to
  * nothing. That is not a hypothetical — it is what makes the rule worth a CI
- * gate (`scripts/check-dependency-whitelist.ts`, rules 6 and
- * `DEV_ONLY_PACKAGES`), and it is why the interface below is a REQUIREMENT.
+ * gate, and it is why the interface below is a REQUIREMENT.
  * Requiring an implementation from mc-render is the opposite of owning one, and
  * the type system makes it structurally impossible to drift into ownership: to
  * satisfy `InputPort` this repository would have to write the implementation
@@ -54,7 +53,7 @@
  */
 import type { CameraPoseSnapshot, DeltaTimeSecs } from '@nerima-games/mc-kernel'
 import { Context, Effect } from 'effect'
-import type { FlatWorldSpec, SpawnKit } from '../domain/launch-options'
+import type { FlatWorldSpec, SpawnKit } from '../domain/launch-options.js'
 
 // ---------------------------------------------------------------------------
 // Ports for mc-worldgen
@@ -64,7 +63,7 @@ import type { FlatWorldSpec, SpawnKit } from '../domain/launch-options'
  * The slice of mc-worldgen a playground uses: make a small flat plate exist,
  * then let go of it.
  *
- * Not `generateChunk` (plan.md §3.7's real API) — a harness has no business
+ * Not `generateChunk` — a harness has no business
  * choosing chunk coordinates. It says "a flat world of this shape, ready to
  * stand on", and mc-worldgen decides what that costs.
  */
@@ -88,8 +87,8 @@ export class WorldProviderPort extends Context.Tag('@nerima-games/mc-playground-
  * The slice of mc-sim a playground uses.
  *
  * `cameraPose` is READ-ONLY, and there is deliberately no way to write one.
- * plan.md §5.1-2 makes mc-sim the authority on camera pose and mc-render a
- * mirror; the reference implementation's chronic gotcha was the reverse
+ * mc-sim is the authority on camera pose and mc-render is a mirror; a common
+ * lifecycle mistake is the reverse
  * structure, in which simulation logic read the pose back out of the THREE
  * camera (`mc-sim/docs/design-notes.md` DN-01 lists all thirteen sites). A
  * harness sitting between the two is precisely where a convenient
@@ -148,7 +147,7 @@ export class RendererPort extends Context.Tag('@nerima-games/mc-playground-kit/R
  * input is to switch it on for the preview's lifetime and off again. Key
  * mapping, pointer lock, touch and gamepad are mc-render's, and a preview that
  * needs to *simulate* input reaches for the reference's virtual-input path
- * (`ts-minecraft/packages/presentation/input/input-service.ts:305-318`:
+ * (the upstream virtual-input surface:
  * `setVirtualKey` / `pulseVirtualKey` / `addVirtualLookDelta` /
  * `setVirtualLookActive`) — which is likewise mc-render's surface, not this
  * one. See docs/porting.md: that path is the load-bearing carry-over, because
@@ -160,7 +159,7 @@ export type PreviewInputService = {
   /**
    * Stop listening and drop every registered listener.
    *
-   * plan.md §3.9: 入力は `window` にキー登録. A listener on `window` outlives the
+   * 入力は `window` に登録される. A listener on `window` outlives the
    * object that added it, so a relaunch that does not detach leaves the previous
    * preview's handlers running against a torn-down world — two previews, one
    * keyboard. Idempotent.
@@ -178,7 +177,7 @@ export class InputPort extends Context.Tag('@nerima-games/mc-playground-kit/Inpu
  *
  * Named because it appears in `launchPlayground`'s requirements and reads far
  * better than a four-way union at every call site — and because it is the exact
- * list of parent repositories from plan.md §3.10 (mc-kernel supplies vocabulary,
- * not a service, and so is absent).
+ * list of upstream services required by the playground (mc-kernel supplies
+ * vocabulary, not a service, and so is absent).
  */
 export type PlaygroundPorts = WorldProviderPort | SimulationPort | RendererPort | InputPort

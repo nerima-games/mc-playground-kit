@@ -1,5 +1,8 @@
 /* oxlint-disable curly, func-names, init-declarations, max-statements, no-magic-numbers, no-ternary, no-undefined, prefer-const, sort-keys -- Lifecycle orchestration is intentionally kept linear; splitting it obscures rollback order. */
-import { Effect, Either, Fiber, Option, Ref } from 'effect'
+import { Cause, Deferred, Effect, Either, Option, Ref } from 'effect'
+import { type DeltaTimeSecs, MonotonicTimeSecs } from '@nerima-games/mc-kernel'
+import { type GameLoopApi, makeGameLoop } from '@nerima-games/mc-sim'
+import { requestNextFrameIfActive } from './frame-scheduling.js'
 
 export type BrowserPreviewSurface = {
   readonly container: HTMLElement
@@ -10,16 +13,12 @@ export type BrowserPreviewSurface = {
 }
 
 /**
- * Structural boundary for adapters around mc-compose's BrowserSession and a
- * renderer/input mount. Keeping it structural avoids making this dev harness a
- * second composition root.
+ * Browser lifecycle around one injected runtime generation. The runtime owns
+ * rendering and input; this module owns surface cleanup and frame scheduling.
  */
 export type BrowserPreviewRuntime = {
   readonly stop: Effect.Effect<void, unknown>
-  readonly frame?: (
-    timestampMillis: number,
-    deltaSeconds: number,
-  ) => Effect.Effect<void, unknown>
+  readonly frame?: (deltaSeconds: DeltaTimeSecs) => Effect.Effect<void, unknown>
 }
 
 export type BrowserPreviewStartError = {
@@ -110,9 +109,9 @@ export const makeBrowserPreview = (
       const cleanups: Array<() => void> = []
       const rollbackFailures: Array<unknown> = []
       let runtime: BrowserPreviewRuntime | undefined
-      let frameFiber: Fiber.RuntimeFiber<void, never> | undefined
+      let gameLoop: GameLoopApi | undefined
+      const activeFrame = yield* Ref.make<Option.Option<Deferred.Deferred<void>>>(Option.none())
       let requestId: number | undefined
-      let previousTimestamp: number | undefined
       let stopped = false
 
       const registerCleanup = (cleanup: () => void) => cleanups.push(cleanup)
@@ -129,10 +128,10 @@ export const makeBrowserPreview = (
           scheduler.cancel(requestId)
           requestId = undefined
         }
-        if (frameFiber !== undefined) {
-          const runningFrame = frameFiber
-          frameFiber = undefined
-          yield* Fiber.interrupt(runningFrame)
+        if (gameLoop !== undefined) {
+          yield* gameLoop.stop
+          const runningFrame = yield* Ref.get(activeFrame)
+          if (Option.isSome(runningFrame)) yield* Deferred.await(runningFrame.value)
         }
         if (runtime !== undefined) {
           yield* Effect.match(runtime.stop, {
@@ -174,22 +173,29 @@ export const makeBrowserPreview = (
 
       const { frame } = runtime
       if (frame !== undefined) {
+        const loop = yield* makeGameLoop()
+        gameLoop = loop
+        const frameHandler = (deltaSeconds: DeltaTimeSecs): Effect.Effect<void> => Effect.gen(function* () {
+          const completion = yield* Deferred.make<void>()
+          yield* Ref.set(activeFrame, Option.some(completion))
+          yield* Effect.ensuring(
+            frame(deltaSeconds).pipe(
+              Effect.catchAllCause((cause) => Effect.gen(function* () {
+                yield* Effect.logError(`Browser preview frame failed: ${Cause.pretty(cause)}`)
+                yield* Effect.sync(() => { Effect.runFork(mutex.withPermits(1)(stopUnlocked)) })
+              })),
+            ),
+            Ref.set(activeFrame, Option.none()).pipe(
+              Effect.zipRight(Deferred.succeed(completion, undefined)),
+              Effect.asVoid,
+            ),
+          )
+        })
+        yield* gameLoop.start(frameHandler)
         const tick: FrameRequestCallback = (timestamp) => {
           if (stopped) return
-          const deltaSeconds = previousTimestamp === undefined
-            ? 0
-            : Math.max(0, (timestamp - previousTimestamp) / 1_000)
-          previousTimestamp = timestamp
-          frameFiber = Effect.runFork(Effect.match(frame(timestamp, deltaSeconds), {
-            onFailure: () => {
-              frameFiber = undefined
-              Effect.runFork(mutex.withPermits(1)(stopUnlocked))
-            },
-            onSuccess: () => {
-              frameFiber = undefined
-              if (!stopped) requestId = scheduler.request(tick)
-            },
-          }))
+          Effect.runFork(loop.submitFrame(MonotonicTimeSecs(timestamp / 1_000)))
+          requestId = requestNextFrameIfActive(stopped, scheduler, tick)
         }
         requestId = scheduler.request(tick)
       }

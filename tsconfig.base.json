@@ -7,13 +7,8 @@
     "target": "ES2024",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    // ES2024 only, deliberately — for now.
-    //
-    // The finished harness mounts a canvas and therefore needs `"DOM"`. It is
-    // not listed yet because the current source is pure: launch options,
-    // defaults, and a boot-phase budget, all of which are checked in Node.
-    // Browser lifecycle types require DOM declarations; tests still inject the
-    // canvas and frame scheduler so boot-order logic remains headless.
+    // The shipped browser lifecycle uses DOM types. Node types are added only
+    // by the test and preview projects, so the package surface stays portable.
     "lib": ["ES2024", "DOM", "DOM.Iterable"],
     "types": [],
 
@@ -57,9 +52,8 @@
     "newLine": "lf",
     "stripInternal": true,
 
-    // No build step yet (see README 現状). Every tsconfig here is check-only;
-    // `package.json#exports` points at TypeScript source. The emitting
-    // build/publish pipeline is added when this repo reaches completion.
+    // Check-only is the safe default. `tsconfig.package.json` opts into the
+    // emitting package build explicitly.
     "noEmit": true,
 
   }

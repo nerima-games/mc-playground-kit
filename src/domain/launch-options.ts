@@ -5,12 +5,12 @@
  * Why the shape of an options bag is the whole design
  * ---------------------------------------------------------------------------
  *
- * plan.md §3.10 gives this repository's public API as, in full:
+ * The public API is intentionally a small, complete options bag:
  *
  *   launchPlayground(options: {world?, spawnKit?, modules?}) → 起動済みミニゲーム
  *
- * Every field is optional, and that is the point. plan.md calls this repository
- * 「最も丁寧に作る部品」because 全プレビューの開発体験がここの起動速度と安定性に依存する —
+ * Every field is optional, and that is the point. A complete default keeps
+ * preview startup consistent across callers —
  * and the first thing a developer experiences is whether `launchPlayground()`,
  * with no arguments at all, produces a world they can stand up and walk around
  * in. If it does not, every preview in the project acquires a paragraph of
@@ -51,6 +51,7 @@
  */
 import {
   type GameModule,
+  type ItemType,
   type Position,
   type StageId,
   type StageRegistration,
@@ -85,7 +86,7 @@ const pick = <T>(supplied: T | undefined, fallback: T): T => {
 /**
  * The mini flat world a playground stands up.
  *
- * plan.md §3.10 says 「ミニ平地ワールド」— *mini* and *flat*, both load-bearing.
+ * The world is intentionally *mini* and *flat*, both load-bearing.
  * Flat because a preview verifying a redstone repeater must not also be
  * verifying a cave carver; mini because the boot budget is one second and
  * terrain generation is the largest single item in it (domain/boot-phase.ts).
@@ -95,8 +96,8 @@ export type FlatWorldSpec = {
   readonly worldId: WorldId
   /**
    * Terrain seed. Fixed by default: a preview that generates different terrain
-   * on every launch cannot be screenshot-compared, and plan.md §3.10's
-   * completion criterion is 起動→操作→スクリーンショット.
+   * on every launch cannot be screenshot-compared, so previews need a stable
+   * starting point for repeatable interaction and capture.
    */
   readonly seed: number
   /** Y of the topmost solid block. The player's feet spawn at `surfaceY + 1`. */
@@ -114,16 +115,8 @@ export const DEFAULT_FLAT_WORLD: FlatWorldSpec = {
   radiusChunks: 1,
   seed: 0,
   /**
-   * 49 is NOT chosen for its relation to sea level. plan.md §3.7 states
-   * SEA_LEVEL = 48, and an earlier version of this comment justified 49 as
-   * "one block above it, so water is reachable by digging down". Both halves
-   * are wrong: the reference's SEA_LEVEL is 63 (<reference-impl>
-   * /packages/core/domain/constants.ts:17), which puts 49 fourteen blocks
-   * BELOW sea level, and a flat preview world generates no water at all.
-   *
-   * It survives as an arbitrary-but-stable ground plane. Previews only need a
-   * surface to stand on. Revisit when a preview needs real terrain, and take
-   * the level from mc-worldgen rather than restating a constant here.
+   * This is an arbitrary-but-stable ground plane. Previews only need a surface
+   * to stand on; real terrain policy belongs to mc-worldgen.
    */
   surfaceY: 49,
   worldId: makeWorldId('playground'),
@@ -133,17 +126,8 @@ export const DEFAULT_FLAT_WORLD: FlatWorldSpec = {
 // SpawnKit
 // ---------------------------------------------------------------------------
 
-/**
- * `ItemId` is provisionally a bare `string`.
- *
- * The preview boundary intentionally remains a bare `string` so it can accept
- * mod-provided ids. Consumers that need the closed kernel vocabulary import
- * `ItemType` from `@nerima-games/mc-kernel`.
- */
-export type ItemId = string
-
 export type HotbarSlot = {
-  readonly item: ItemId
+  readonly item: ItemType
   readonly count: number
 }
 
@@ -156,7 +140,7 @@ export type HotbarSlot = {
  * "assume the player already has what this preview is about".
  */
 export type SpawnKit = {
-  /** Feet origin, NOT the AABB centre or the eye. plan.md §3.4's Y-convention rule. */
+  /** Feet origin, not the AABB centre or the eye. */
   readonly feetPosition: Position
   readonly yawRadians: number
   readonly pitchRadians: number
@@ -170,10 +154,8 @@ const SPAWN_HEIGHT_OFFSET = 1
 
 export const DEFAULT_SPAWN_KIT: SpawnKit = {
   /**
-   * Uses `surfaceY + 1`: plan.md §3.4 — "ブロックは [y, y+1] を占有。スポーンと物理平面は
-   * surfaceY+1 基準". Spawning at surfaceY itself puts the player inside the
-   * ground, which the collision resolver then ejects them from, upward,
-   * visibly, on frame one.
+   * Uses `surfaceY + 1` so the player starts above the solid surface instead of
+   * inside it, where collision resolution would visibly eject them on frame one.
    */
   feetPosition: position(
     SPAWN_ORIGIN_HORIZONTAL,
@@ -181,9 +163,9 @@ export const DEFAULT_SPAWN_KIT: SpawnKit = {
     SPAWN_ORIGIN_HORIZONTAL,
   ),
   hotbar: [
-    { count: 64, item: 'STONE' },
-    { count: 64, item: 'OAK_PLANKS' },
-    { count: 64, item: 'TORCH' },
+    { count: 64, item: 'stone' },
+    { count: 64, item: 'oak_planks' },
+    { count: 64, item: 'torch' },
   ],
   pitchRadians: 0,
   // Facing -Z, level. Kernel's convention: yaw 0 looks down -Z.
@@ -195,7 +177,7 @@ export const DEFAULT_SPAWN_KIT: SpawnKit = {
 // ---------------------------------------------------------------------------
 
 /**
- * The half of plan.md §4.1's `GameModule` that a playground consumes.
+ * The portion of `GameModule` that a playground consumes.
  *
  * ---------------------------------------------------------------------------
  * Why only half
@@ -205,27 +187,25 @@ export const DEFAULT_SPAWN_KIT: SpawnKit = {
  * harness takes the second and NOT the first, for two independent reasons, and
  * either alone would be sufficient.
  *
- * THE ARCHITECTURAL REASON. plan.md §2.3-3 gives the Layer merge and the single
- * total stage order to mc-compose, and to mc-compose alone. A harness that
+ * THE ARCHITECTURAL REASON. Layer merging and the single total stage order
+ * belong to the application composition root. A harness that
  * merged Layers and resolved `after` edges would be a second implementation of
  * compose's only job. It would then be possible for a module to work in every
- * preview and fail in the shipped game — which is the exact failure mode the
- * 16-repository split exists to prevent, reintroduced by the tool meant to make
- * the split bearable.
+ * preview and fail in the shipped game.
  *
  * THE TYPE-SYSTEM REASON. `ReadonlyArray<GameModule<ROut, E, RIn>>` cannot
  * express a heterogeneous list: two modules providing different services have
  * different `ROut`, and TypeScript has no existential to quantify them away.
  * Every workaround (a union, `any`, a wildcard `unknown`) either erases the
  * service types the merge exists to compute or forces every caller to spell out
- * one enormous type parameter. compose can solve this because it knows the full
+ * one enormous type parameter. The application composition root can solve this because it knows the full
  * module list statically. A harness taking modules at runtime cannot.
  *
  * So a preview's services come from the Layer the caller provides to
  * `launchPlayground` in the ordinary Effect way, and `modules` carries only the
  * per-frame work. `PreviewModule` is written as a `Pick` of the contract type
  * rather than as a fresh interface so that a real `GameModule` is structurally
- * assignable to it and so that this file breaks if §4.1 changes.
+ * assignable to it and the dependency remains visible in the type checker.
  */
 export type PreviewModule = Pick<GameModule<never, never, never>, 'frameStages'>
 
@@ -393,8 +373,8 @@ export const flattenedStageOrderViolations = (
  * module can acquire a service or allocate a `Ref` in order to build its
  * stages, so a second evaluation is a second, DISTINCT set of
  * `StageRegistration`s. Warnings computed over stages the frame loop will never
- * run describe a preview that does not exist. `application/playground.ts` used
- * to do exactly that; see the `modules` phase there.
+ * run describe a preview that does not exist. `application/playground-boot.ts`
+ * owns the single `modules` phase used by the frame loop.
  */
 export const stageOrderViolations = (
   modules: ReadonlyArray<PreviewModule>,

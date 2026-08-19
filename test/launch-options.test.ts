@@ -1,7 +1,7 @@
 /**
  * `LaunchOptions` normalisation.
  *
- * plan.md §3.10's public API is `launchPlayground(options: {world?, spawnKit?,
+ * The public API is `launchPlayground(options: {world?, spawnKit?,
  * modules?})`, every field optional. The promise that makes that API worth
  * having is that `launchPlayground()` with nothing at all is a complete
  * configuration — so these tests are about the DEFAULTS and about the merge,
@@ -67,7 +67,7 @@ describe('defaults', () => {
 
   it.effect('REGRESSION: the player spawns at surfaceY + 1, standing ON the block', () =>
     Effect.sync(() => {
-      // plan.md §3.4: ブロックは [y, y+1] を占有。スポーンと物理平面は surfaceY+1 基準.
+      // Blocks occupy [y, y+1], so feet start at surfaceY + 1.
       // Spawning at surfaceY itself puts the feet inside the block, and the AABB
       // resolver then ejects the player upward on frame one — visibly.
       expect(DEFAULT_SPAWN_KIT.feetPosition.y).toBe(50)
@@ -165,7 +165,7 @@ describe('merging', () => {
           feetPosition: position(8, 65, -8),
           yawRadians: 1.5,
           pitchRadians: -0.2,
-          hotbar: [{ item: 'REDSTONE_TORCH', count: 16 }],
+          hotbar: [{ item: 'torch', count: 16 }],
         },
         modules: [moduleOf(stage('redstone:tick'))],
       })
@@ -244,8 +244,8 @@ describe('stage order is CHECKED, never resolved', () => {
 
   it.effect('a duplicate stage id resolves to its FIRST occurrence', () =>
     Effect.gen(function* () {
-      // What a duplicate id MEANS is mc-compose's call, not a harness's. This
-      // pins the harness's behaviour so the ambiguity is at least deterministic.
+      // The application composition root owns the final order. This pins the
+      // harness's behaviour so duplicate declarations remain deterministic.
       expect(yield* stageOrderViolations([moduleOf(stage('x'), stage('y', ['x']), stage('x'))])).toStrictEqual([])
     }),
   )

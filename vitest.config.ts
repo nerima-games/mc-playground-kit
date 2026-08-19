@@ -5,14 +5,8 @@ export default defineConfig({
     environment: 'node',
     globals: false,
     pool: 'forks',
-    poolOptions: {
-      forks: {
-        maxForks: '50%',
-        minForks: 1,
-        isolate: true,
-        singleFork: false,
-      },
-    },
+    maxWorkers: '50%',
+    isolate: true,
     include: ['test/**/*.test.ts'],
     exclude: ['**/node_modules/**', '**/dist/**', '**/coverage/**', '**/.git/**'],
     testTimeout: 10000,
@@ -34,17 +28,14 @@ export default defineConfig({
         '**/*.config.ts',
         '**/*.test.ts',
         '**/*.spec.ts',
+        'src/domain/**/*-types.ts',
       ],
-      all: true,
       reporter: ['text', 'json', 'html', 'lcov'],
       reportsDirectory: './coverage',
-      // Org-wide decision (TEST_STANDARD.md §3): the 4-metric 99% gate is enabled
-      // immediately and uniformly across all 16 repositories, with no staged
-      // rollout. KNOWN, ACCEPTED shortfall for this repository (TEST_STANDARD.md
-      // §4): functions coverage measures ~96.29%, short of 99%; the other three
-      // metrics (statements/lines ~98.51%, branches 100%) clear the bar. This is
-      // tracked as follow-up work, not a reason to defer or loosen the threshold.
-      thresholds: { branches: 99, functions: 99, lines: 99, statements: 99 },
+      // Keep all four metrics at the same strict floor. The threshold belongs to
+      // the package contract, so uncovered code cannot be hidden by a weaker
+      // selector or by a metric that happens to be green.
+      thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 },
     },
   },
   esbuild: {
