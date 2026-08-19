@@ -1,545 +1,519 @@
-# 公開API
+# Public API
 
-plan.md §3.10 は主要な公開APIを 1 行だけ書いている。
+The package root exports the local domain and application modules listed below,
+and directly re-exports the portable domain, service, and stage APIs from
+`@nerima-games/mc-kernel` and `@nerima-games/mc-sim`. It exposes the portable
+`@nerima-games/mc-physics`, `@nerima-games/mc-save`, and
+`@nerima-games/mc-worldgen` surfaces through the `physics`, `save`, and
+`worldgen` namespaces. These upstream packages remain the canonical owners of
+their brands, registries, mechanics, and persistence formats; local modules add
+only boundaries that need this package's sparse world or lifecycle ownership.
 
-> `launchPlayground(options: {world?, spawnKit?, modules?}) → 起動済みミニゲーム`
+## Package distribution
 
-本書はそれを実際の型まで展開したもの。**参照実装に対応物がある箇所は実コードと突き合わせ、
-無い箇所は「無い」と明記する。** plan.md §3.10 の移植元は「なし（新規）」なので、
-後者のほうが多い（[porting.md](./porting.md)）。
+The supported runtime import is the generated ESM entry point in `dist/index.js`;
+its declarations are emitted as `dist/index.d.ts`. The build bundles the
+source-only runtime exports from the mc-kernel, mc-sim, mc-physics, mc-save, and
+mc-worldgen packages, while keeping `effect` as a normal external dependency.
+Consumers therefore import the package root and do not depend on
+checkout-relative TypeScript files.
 
-パスはすべて `takeokunn/ts-minecraft` リポジトリルート相対。
+`pnpm test:package` imports the built entry point under Node 24 and checks the
+required runtime exports. It complements TypeScript declaration checking: a
+successful typecheck alone does not prove that a published ESM entry point can
+be loaded by Node.
 
-## 0. サービス定義方式
+## Simulation stages and composition
 
-参照実装は `Effect.Service` クラスを使う（`packages/entity/application/player-service.ts:8-11`）。
-**新実装は `Context.Tag` + 明示的な `Layer` を採る**。mc-sim と同じ判断であり
-（`mc-sim/docs/public-api.md` §0）、kit ではさらに 2 つ理由が重い。
+The root directly re-exports mc-sim's stage factories: `makeSimStages`,
+`makeSimStagesWithPhysics`, `makeSimStagesForPreview`,
+`makeSimStagesForPreviewWithPhysics`, and
+`makeControllableSimStagesWithPhysics`. These factories remain upstream-owned;
+the kit does not wrap their `StageRegistration` values or duplicate the physics
+stage.
 
-- **テスト差し替えが `Layer.succeed(Tag, fake)` だけで済む。** 本リポジトリの Port は 4 つとも
-  未公開リポジトリの surface なので、**現時点では全テストが fake で走っている**。
-  継承やキャストが要る方式だとテストが書けない。
-- **同じ Tag で複数インスタンスを作れる。** plan.md §3.8 の「再入可能な初期化」に効く。
-  プレビューを 2 枚並べることは、ハーネスにとって普通の要求である。
+The factories acquire mc-sim's `TimeService`, `PlayerService`, and `CropService`
+when their stage effects are built. The application composition root supplies
+those services, chooses the physics configuration when needed, merges the
+corresponding layers, and resolves one total order for all modules. The local
+`Playground` accepts already-built `frameStages` in `LaunchOptions.modules` and
+runs them in declaration order while reporting violated `after` metadata; it
+does not construct `GameModule.layers`, sort stages, or automatically tick
+physics, fluids, or redstone.
 
-Tag の文字列は `@nerima-games/mc-playground-kit/Xxx` に統一する
-（ミラーである `ClockPort` だけは `@nerima-games/mc-kernel/ClockPort`。
-kernel 公開時にそのまま置き換わる必要があるため）。
+Use `makeSimStagesForPreview` when the host needs the upstream `{ state, stages }`
+pair, and use the physics variants when it also owns the upstream
+`SimInputPort`. The package root exposes both names so callers can choose the
+upstream contract directly.
 
-## 1. `launchPlayground` — plan.md §3.10 の入口
+## Generated worlds
 
-```typescript
-export const launchPlayground = (
-  options?: LaunchOptions | undefined,
-) => Effect.Effect<PlaygroundHandle, never, Playground | ClockPort | PlaygroundPorts>
-```
+`worldgen` is a direct namespace export of `@nerima-games/mc-worldgen`. Use it
+for deterministic terrain, biome and structure generation, generated-dimension
+and `ChunkStore` lifecycle, persistence ports, and propagated chunk lighting.
+This package does not rename or wrap those APIs:
 
-### 1.1 なぜ `Playground` を要求するのか
+~~~ts
+import { worldgen } from '@nerima-games/mc-playground-kit'
 
-plan.md の記述は自由関数に見える。実際にはサービス経由にしてある。
+const generateChunk = worldgen.generateChunk
+const ChunkStore = worldgen.ChunkStore
+const computeChunkLights = worldgen.computeChunkLights
+~~~
 
-**理由は「2 回目の起動」である。** 自由関数は、自分が知らない過去の起動を後始末できない。
-plan.md §3.8 が参照実装の最大級のバグ源として挙げるのが 2 周目ワールドの
-デッドロック / やり残し fiber であり、ハーネスはそれを**毎回のホットリロードでやる**道具である。
-「前回のプレビュー」の置き場所が要る。
+The local `ChunkWorld` below remains a finite immutable sparse-storage boundary
+for tests and small host-owned slices. The preview `WorldProvider` port remains
+an application lifecycle contract; a shipped runtime can compose it with
+`worldgen.ChunkStore` directly.
 
-```typescript
-export type PlaygroundApi = {
-  readonly launch: (options?: LaunchOptions | undefined)
-    => Effect.Effect<PlaygroundHandle, never, ClockPort | PlaygroundPorts>
-  readonly current: Effect.Effect<Option.Option<PlaygroundHandle>>
-  readonly stop: Effect.Effect<void>
-}
+## Physics and persistence
 
-export class Playground extends Context.Tag('@nerima-games/mc-playground-kit/Playground')<
-  Playground, PlaygroundApi
->() {}
+`physics` is a direct namespace export of `@nerima-games/mc-physics`. Use its
+voxel raycast, body integration, world resolution, and projectile helpers when
+the host owns a physics simulation. The local collision and targeting helpers
+adapt a sparse `BlockSource` to the upstream callback contracts; they do not
+replace or wrap the upstream solver.
 
-export const makePlayground: Effect.Effect<PlaygroundApi>
-export const PlaygroundLayer: Layer.Layer<Playground>
-```
+`save` is a direct namespace export of `@nerima-games/mc-save`. Use its format,
+envelope, encoding, storage, and durable-save APIs when the host owns
+persistence. Playground launch and teardown do not implicitly load or write
+authoritative state.
 
-`makePlayground` も公開しているのは、plan.md §3.8 の DN-09 の答えが
-「そもそもシングルトンにしない」だからである（`mc-sim/docs/design-notes.md` DN-09）。
-`Layer.effect` なので **Layer を 2 回 build すれば独立したハーネスが 2 つ**得られる。
+## Domain values
 
-### 1.2 エラーチャネルが `never` である理由
+normalizeLaunchOptions is pure and total:
 
-起動が失敗しないわけではない。**失敗はすべて Port の向こう側にある**からである。
-ワールド生成に失敗するのは mc-worldgen、レンダラの attach に失敗するのは mc-render であり、
-それぞれの失敗型はそれぞれが決める。ハーネスがここで独自のエラー型を被せると、
-呼び出し側は「kit のエラー」を剥がして中身を見る作業をすることになる。
+~~~ts
+import { normalizeLaunchOptions } from '@nerima-games/mc-playground-kit'
 
-現在の Port はすべて `Effect<void>`（失敗なし）で宣言してある。実装が付いた時点で
-`E` を持つ Port が出てきたら、`launchPlayground` の `E` はその和になる。
-**その変更は破壊的変更として扱う**（[versioning.md](./versioning.md)）。
+const options = normalizeLaunchOptions({
+  world: { seed: 42 },
+})
+~~~
 
-## 2. `LaunchOptions` — 本リポジトリで最も重要な型
+options.world, options.spawnKit, and options.modules are always present in the
+returned ResolvedLaunchOptions. Nested supplied fields are merged
+field-by-field; undefined means “not supplied”.
 
-```typescript
-export type Supplied<T> = { readonly [K in keyof T]?: T[K] | undefined }
+HotbarSlot.item is the kernel-owned ItemType. Use the kernel constructor or
+registry when creating branded values:
 
-export type LaunchOptions = {
-  readonly world?: Supplied<FlatWorldSpec> | undefined
-  readonly spawnKit?: Supplied<SpawnKit> | undefined
-  readonly modules?: ReadonlyArray<PreviewModule> | undefined
-}
+~~~ts
+import { ItemType, MonotonicTimeSecs } from '@nerima-games/mc-kernel'
 
-export type ResolvedLaunchOptions = {
-  readonly world: FlatWorldSpec
-  readonly spawnKit: SpawnKit
-  readonly modules: ReadonlyArray<PreviewModule>
-}
+const item = ItemType('torch')
+const timestamp = MonotonicTimeSecs(0.016)
+~~~
 
-export const normalizeLaunchOptions:
-  (options?: LaunchOptions | undefined) => ResolvedLaunchOptions
-```
+The package root re-exports the kernel public surface directly. Kernel remains
+the single owner of these branded values, so this package does not introduce a
+second constructor or registry.
 
-### 2.1 契約: 無引数で完結する
+## Gameplay services
 
-**`launchPlayground()` を引数ゼロで呼んだら、立って歩けるワールドが出る。**
+GameplayServicesLayer is the package's direct baseline composition of reusable
+mc-sim state services. It provides the simModule layers for inventory, player,
+time, and crops, together with equipment, vitals, weather, settings,
+statistics, and vehicles.
 
-これが成立しないと、15 リポジトリのプレビューそれぞれが定型文を持ち、
-その定型文がリポジトリごとに drift する。plan.md §3.10 が全フィールドを `?` にしているのは
-そういう意味だと解釈した。`test/launch-options.test.ts` の
-`launchPlayground() with NO options is a complete configuration` がこれを固定している。
+It is intended to be merged with application-owned world, renderer, entity,
+and frame layers:
 
-### 2.2 入口は寛容、出口は全域
+~~~ts
+import { Effect } from 'effect'
+import { InventoryService } from '@nerima-games/mc-sim'
+import { GameplayServicesLayer } from '@nerima-games/mc-playground-kit'
 
-`tsconfig.base.json` は `exactOptionalPropertyTypes: true`。この設定下では `x?: T` は
-「省略可」だが「明示的な `undefined` は不可」になる。プログラムが**組み立てる**値には正しく、
-呼び出し側が**書く**値には間違っている。
+const readInventory = Effect.gen(function* () {
+  const inventory = yield* InventoryService
+  return yield* inventory.snapshot
+}).pipe(Effect.provide(GameplayServicesLayer))
+~~~
 
-```typescript
-launchPlayground({ world: featureFlag ? { seed: 7 } : undefined })
-```
+The layer does not create a game loop or resolve host-specific entity behavior;
+the composition root supplies those capabilities.
 
-これは普通の呼び出しコードであり、`world?: Supplied<FlatWorldSpec>` ではコンパイルが通らない。
-したがって**入口の任意フィールドはすべて `?: T | undefined`**、**出口は全フィールド必須**。
-寛容さはこの関数で止まる。以降のコードは二度と「供給されたか」を問わない。
+When a caller also wants mc-sim's generic entity roster lifecycle, use
+`gameplayServicesLayerWithEntities<S>(initial?, repairBehaviour?)`. The type
+parameter `S` remains caller-owned, so the helper provides spawn, snapshot,
+restore, and reset without inventing entity behavior or an AI adapter in this
+package.
 
-`test/launch-options.test.ts` の
-`an explicit undefined FIELD means "not supplied", not "blank it out"` は
-**コンパイルできること自体がアサーション**である。
+The supplied InventoryService also exposes mc-sim's published crafting and
+container transitions, including craft, previewCraft, createContainer, and
+transferContainerItem. This package composes those operations without copying
+their recipes or storage rules.
 
-### 2.3 既定値のマージはフィールド単位
+Anvil operations remain kernel-owned and are re-exported directly by the
+package root. Use `planAnvil`, `applyAnvil`, and the snapshot functions for repair,
+enchantment, naming, cost, and persistence transitions. `AnvilState` carries
+item payloads, enchantments, custom names, repair costs, and experience levels;
+`PlayerStorage` cannot represent that state without loss, so this package does
+not add an anvil adapter or a second anvil rule implementation.
 
-`{ ...DEFAULT, ...override }` は使わない。`override` が明示的な `undefined` を運びうる
-（§2.2 でそれを合法にした）ので、オブジェクトマージだと既定値が消える。
+## Block interaction
 
-`pick(supplied, fallback)` は `supplied === undefined` だけを見る。
-`??` でも `||` でもないのは、**`0` と `[]` が正当な指定値だから**である。
-`radiusChunks: 0`（1 チャンクだけ）も `hotbar: []`（手ぶらで始めたい）も実在する要求で、
-truthiness 判定はそれを黙って既定値に戻してしまう。
+makeBlockInteractionState creates an immutable sparse block world and an
+mc-sim PlayerStorage snapshot. breakBlock and placeBlock are pure state
+transitions. A break request may identify the held tool with mc-sim's
+StorageLocation; successful breaks then delegate one durability point to
+mc-sim's damageAt operation and expose its result as toolDamage:
 
-### 2.4 `world` — ミニ平地ワールド
+- breakBlock reads the kernel block registry, applies the kernel drop rule, and
+  adds the resulting item through mc-sim inventory logic. When the kernel
+  resolves a non-silk harvest drop, result.experience exposes its xpOnBreak
+  value. This is a value-only handoff: vitals remain owned by mc-sim, so a host
+  can pass the value to VitalsService.addExperience. Air and unknown blocks
+  leave the state unchanged; a full inventory reports leftover items. The
+  input PlayerStorage remains unchanged, while the result preserves its
+  equipment and updates inventory durability when toolLocation is supplied.
+  After a successful break, the direct vertical chain above the cleared cell
+  is checked with mc-kernel's support rules. Newly unsupported known blocks are
+  removed in order, and result.detached reports each block's transition. A
+  `detached` transition includes its kernel drop if one exists and that drop's
+  inventory leftover; a `falling` transition has no immediate inventory drop
+  and a zero leftover so the caller can create its falling entity.
+- placeBlock validates the selected mc-kernel ItemType, resolves its placeable
+  block, checks the kernel replaceable capability, and consumes one inventory
+  item. Occupied, empty, non-placeable, and invalid-slot requests leave the
+  state unchanged.
 
-```typescript
-export type FlatWorldSpec = {
-  readonly worldId: WorldId       // 既定 'playground'
-  readonly seed: number           // 既定 0（固定）
-  readonly surfaceY: number       // 既定 49
-  readonly radiusChunks: number   // 既定 1（3x3 = 48x48 ブロック）
-}
-```
+The result includes the outcome, the affected block, the experience handoff,
+any removed vertical blocks and their transitions, and the next state so a host can persist or
+compose the transition without a local registry adapter. The lower-level
+`removeUnsupportedBlocksAbove` function exposes the same pure support scan for
+world transitions that do not include a player inventory.
 
-| フィールド | 既定値の根拠 |
+## Block collision
+
+`blockCollisionFor` projects a known kernel `BlockId` and position into one
+collision hull without reading a world. `blockCollisionAt` resolves one block
+from a `BlockSource`, either a sparse `BlockWorld` or
+`(position: BlockPosition) => BlockId` `BlockReader`.
+`blockReaderOf` creates that view for a `BlockWorld`, and
+`blockReaderOfChunkWorld` creates it for `ChunkWorld`. `blockCollisionsIn`
+remains a `BlockWorld` query because it enumerates stored cells. Both functions
+are read-only and preserve the sparse world. The hull projection uses the
+`collisionShape` values currently published by mc-kernel: full blocks, lower
+slabs, inset cactus blocks, pressure plates, and non-colliding shapes. Unknown
+ids and air are ignored. A query that only
+touches a hull boundary does not count as an intersection because the kernel's
+`aabbIntersects` predicate is strict.
+
+This API provides collision geometry only. Movement resolution is owned by
+mc-sim's physics stages; this kit only adapts its sparse block source to the
+upstream callbacks. Block-state-dependent variants remain owned by the relevant
+world or gameplay package.
+
+`blockContactAt`, `blockContactsIn`, and `blockContactDamageIn` expose the
+kernel-defined `contactDamage` property for cactus and fluid-like hazards. They
+return immutable contact values or an upstream mc-sim `Damage` value; applying
+damage and deciding the tick cadence remain caller-owned. Contact hulls use the
+projected collision hull when one exists and a full block volume otherwise.
+Unknown ids, air, and blocks without contact damage are ignored, and face-only
+contact follows the same strict AABB boundary rule.
+
+`blockFluidAt` and `blockFluidsIn` expose the kernel-defined `fluid` property as
+immutable full-cell occupancy records. The point query accepts a `BlockSource`,
+and the range query enumerates occupied cells from a sparse `BlockWorld` or its
+read-only block reader. Water and lava are returned with their kernel block id,
+position, and full-cell AABB; air, unknown ids, and empty ranges are ignored.
+The strict AABB boundary rule means face-only overlap is not reported. For
+state-aware geometry, `fluidVolumeAt` and `fluidVolumesIn` project immutable
+fluid levels and falling state into partial or full-cell AABBs.
+
+`fluidStateFromWorld` creates source-level water and lava cells from a sparse
+`BlockWorld` and schedules them for a transition. `updateFluids` applies one
+immutable local update over the scheduled cells: it handles downward and
+horizontal flow, replacement through mc-kernel capabilities, water/lava mixing,
+and immutable scheduling of newly reached cells. The caller owns the state
+between ticks and must reschedule externally changed cells.
+`makeWorldMechanicsStage` executes that transition at a fixed interval, and
+`makeWorldMechanicsPreview` exposes the stage and its `Ref` state through a
+`PreviewModule` for explicit launch composition. The caller still owns
+external rescheduling, block-state variants, chunk-neighbour scheduling,
+fluid collision integration, world/chunk composition, and full official
+parity.
+
+`updateRedstone` computes one immutable local transition for redstone blocks,
+levers, buttons, pressure plates, torches, wires, repeaters, comparators,
+observers, and lamps. `RedstoneState` carries switch inputs, wire powers,
+device state, repeater timers, and observer snapshots; the result includes
+changed wire powers and lamp block ids. The core uses the kernel block registry
+and propagates power through the enumerated sparse layout, while
+orientation-specific block states, exact official tick semantics, and
+world/chunk composition remain caller-owned. The same local transition can be
+run at a fixed interval through `makeWorldMechanicsStage`;
+`makeWorldMechanicsPreview` packages that stage as a `PreviewModule` without
+installing it into `launchPlayground` implicitly.
+
+## World mechanics stage
+
+`WORLD_TICK_INTERVAL_SECS` is the default fixed interval for the local fluid
+and redstone transition stage. `makeWorldMechanicsStage` accepts a mutable
+`Ref` of `WorldMechanicsState`, accumulates frame delta time, and advances one
+or more local ticks when the configured interval elapses. A custom positive
+interval and stage ordering metadata can be supplied.
+
+`makeWorldMechanicsPreview` creates the state `Ref` from a `BlockWorld` and
+returns `{ module, state }`. Pass `module` in `LaunchOptions.modules` when the
+host wants this local stage in a preview; the playground lifecycle does not
+install it automatically. Chunk synchronization, block-state variants,
+official scheduled-tick semantics, and full-world mechanics remain host
+responsibilities.
+
+`blockLightSourceAt` and `blockLightSourcesIn` expose the kernel-defined
+`lightEmission` property as immutable full-cell source records. They return
+positive emitted light levels with their kernel block id, position, and
+full-cell AABB; air, unknown ids, and non-emitting blocks are ignored. The
+range query accepts a sparse `BlockWorld` or its read-only block reader and
+uses strict AABB intersection.
+
+`propagateBlockLight` seeds those kernel-defined emission levels and propagates
+them through known light-transmitting blocks with six-neighbour attenuation.
+`blockLightAt` reads the resulting immutable sparse `BlockLightField`, and
+`boundsExpandedForBlockLight` describes the source-search margin used by the
+bounded propagation query. This local field does not model sky light, chunk
+light grids, scheduled updates, or a full-world lighting tick; use
+`worldgen.computeChunkLights` and `worldgen.updateChunkLights` for the upstream
+generated-chunk light behavior.
+
+## Chunk world
+
+ChunkWorld provides an immutable-transition boundary for a finite-height,
+sparse chunk store. `emptyChunkWorld` accepts heights from 1 through 65,535 and
+an optional safe-integer `minY`; the default vertical origin is zero. Absent
+chunks and coordinates outside `[minY, minY + height)` read as air. Block
+writes validate the mc-kernel registry, preserve prior world values, and remove
+chunks that become entirely air:
+
+~~~ts
+const world = emptyChunkWorld(384, -64)
+const result = writeBlockAtChunkWorld(
+  world,
+  blockPosition(-1, 64, -17),
+  blockIdOf('dirt'),
+)
+~~~
+
+`storeChunkInChunkWorld` accepts kernel-validated chunks at the configured
+height, while `encodeChunkAt` and `loadEncodedChunkIntoWorld` use mc-kernel's
+versioned chunk codec. The codec stores chunk payloads but not the world's
+vertical origin, so a loader must recreate the same `minY` for the dimension.
+Height mismatches, unknown block ids, out-of-bounds writes, and malformed bytes
+are returned as tagged outcomes. Chunk generation, streaming, persistence, and
+multi-dimension ownership remain caller-owned by this boundary; the portable
+implementations are available through `worldgen`.
+
+For point queries, `blockReaderOfChunkWorld(world)` returns a read-only
+`BlockReader` without copying or converting chunk data. Supply it to
+`targetBlock`, `raycastArrowInWorld`, or `blockCollisionAt`; range queries such
+as `blockCollisionsIn` intentionally remain sparse-map operations.
+
+## Block targeting
+
+targetBlock resolves the first known, non-air block in a `BlockSource` (a sparse
+`BlockWorld` or `BlockReader`) from an authoritative mc-sim PlayerPose:
+
+~~~ts
+const target = targetBlock(world, {
+  playerPose,
+  maxDistance: 6,
+})
+~~~
+
+The DDA raycast and camera geometry remain owned by mc-sim and mc-physics. This
+package supplies only the world predicate backed by mc-kernel, either from the
+sparse map or a direct point reader, and returns an Effect Option<BlockTarget>
+containing the hit position, the adjacent placement position, and the hit
+distance. Resolving a target never mutates the world; callers can pass the
+returned positions to their break or place transition.
+
+## Projectile interaction
+
+raycastArrowInWorld delegates arrow voxel traversal to mc-sim and evaluates
+each coordinate against the known, non-air blocks in a `BlockSource`:
+
+~~~ts
+const impact = raycastArrowInWorld(world, {
+  from: { x: 0.5, y: 1.5, z: 0.5 },
+  to: { x: 0.5, y: 1.5, z: -8.5 },
+})
+~~~
+
+The result is an Effect Option<ArrowBlockImpact>. The world remains caller-owned
+and is not mutated. Projectile motion, entity collision, damage, and the
+authoritative projectile state remain outside this block-collision boundary.
+
+## Explosion interaction
+
+planBlockWorldExplosion and explodeBlockWorld delegate deterministic explosion
+planning to mc-sim. The caller supplies a BlockExplosionProfile because
+mc-kernel does not define blast resistance or destructibility:
+
+~~~ts
+const profile = (blockId: BlockId): ExplosionBlock | undefined =>
+  blockId === AIR_BLOCK_ID
+    ? { resistance: 0, destructible: false }
+    : explosionData.get(blockId)
+
+const result = explodeBlockWorld({
+  ...explosionRequest,
+  profile,
+  world,
+})
+~~~
+
+The result contains the upstream ExplosionPlan and a new sparse BlockWorld with
+only destroyed cells removed. The input world is never mutated. Use
+planBlockWorldExplosion when entity effects need to be committed by the host in
+the same transaction as another world or entity store. The corresponding
+planBlockWorldPrimedTnt and advancePrimedTntInBlockWorld functions advance a
+primed TNT fuse and apply its planned blast exactly once; a non-detonating tick
+returns the original world reference.
+
+## Furnace interaction
+
+makeFurnaceInteractionState composes an mc-sim Inventory with an upstream
+FurnaceState. transferItemsToFurnace, advanceFurnace, and collectFurnaceOutput
+delegate item validation, recipes, fuel rules, smelting, and output capacity to
+mc-sim while returning one immutable FurnaceInteractionState transition.
+
+advanceFurnace advances the furnace only; the inventory remains caller-owned
+and the result reports fuelConsumed and smelted. Transfer and collection
+operations return the upstream tagged result, so rejected transfers and full
+inventories do not discard state.
+
+## Crop interaction
+
+makeCropInteractionState composes an mc-sim CropSnapshot and Inventory with an
+immutable sparse BlockWorld. plantCrop, advanceCrops,
+advanceCropWithBoneMeal, and harvestCrop expose the crop world boundary:
+
+- mc-sim remains the source of crop definitions, supported dimensions and soil,
+  growth timing, bone-meal advancement, and mature yields;
+- this package checks the active sparse world for occupancy, support, and the
+  expected crop block, then consumes seeds or bone meal and updates the crop
+  snapshot, inventory, and crop block immutably;
+- harvestCrop returns the upstream drops and any inventory leftovers, while
+  removing the crop block and crop state only after a mature crop is found.
+
+BlockWorld is the currently active dimension slice. CropLocation.dimension is
+used when applying mc-sim's planting rule. ChunkWorld can provide a finite,
+sparse chunk-backed dimension slice, while generation, streaming, persistence,
+and multi-dimension world ownership remain outside this package. advanceCrops
+also discards crop snapshot entries whose world block was removed or replaced,
+preventing stale crop state from advancing.
+
+## Wither interaction
+
+makeWitherInteractionState composes an upstream WitherState with an immutable
+sparse BlockWorld. summonWitherInBlockWorld delegates the seven-cell structure
+match to mc-sim, consumes only the matched soul-sand, soul-soil, and skull cells,
+and creates the upstream charging state. Invalid structures and repeated
+summons return the original state.
+
+advanceWitherInBlockWorld and damageWitherInBlockWorld delegate movement,
+charging, armour, regeneration, damage, and death transitions to mc-sim. The
+advance result exposes the upstream spawn-explosion descriptor, while the
+damage result preserves the upstream death payload. Wither skull projectile
+planning and serialization remain direct mc-sim operations; this package owns
+only the sparse-world summon boundary and immutable block consumption.
+
+## Playground
+
+The main entry point is:
+
+~~~ts
+export const launchPlayground: (
+  options?: LaunchOptions,
+) => Effect.Effect<
+  PlaygroundHandle,
+  never,
+  ClockPort | PlaygroundPorts
+>
+~~~
+
+PlaygroundLayer provides the Playground service. PlaygroundApi.launch performs
+the same operation through the service and is safe to call while another
+generation is running.
+
+PlaygroundHandle exposes:
+
+| Member | Meaning |
 | --- | --- |
-| `seed` | **固定**。毎回違う地形が出るプレビューはスクリーンショット比較ができない。plan.md §3.10 の完了条件が「起動→操作→スクリーンショット」である以上、決定論は要件 |
-| `surfaceY` | 49。**海面とは無関係な、単なる平地の高さである**（下記の訂正を参照） |
-| `radiusChunks` | 1。3x3 チャンク = 48x48 ブロック。1 分歩いてもチャンクストリーミングで止まらず、かつ `world` phase のバジェット 400ms に収まる大きさ |
-
-#### 訂正: `surfaceY = 49` の根拠として書かれていた「`SEA_LEVEL=48` のすぐ上」は誤り
-
-本文書は以前、`surfaceY = 49` を「plan.md §3.7 の参照実装実測 `SEA_LEVEL=48` のすぐ上。
-水に接する挙動が『1 ブロック掘る』で到達できる」と説明していた。**両方とも成立しない。**
-
-- 参照実装の `SEA_LEVEL` は **63** である(`<reference-impl>/packages/core/domain/constants.ts:17`)。
-  48 という値は plan.md §3.7 の誤りで、mc-worldgen の
-  [public-api.md](https://github.com/nerima-games/mc-worldgen/blob/main/docs/public-api.md) §1 が
-  `SEA_LEVEL = 63` / `LAKE_LEVEL = SEA_LEVEL` として実測で訂正している。
-- したがって 49 は海面の「すぐ上」ではなく、海面より **14 ブロック下**である。
-  「1 ブロック掘れば水に届く」という記述は 63 のもとでは端的に偽である。
-- そもそもこの平地ワールドは**水を一切生成しない**(平地・カーバー無し・湖無し)。
-  海面定数はこの既定値の根拠になりえない。
-
-**49 は「地表として妥当な範囲にある任意の平地の高さ」以上の意味を持たない。**
-既定値の実質的な制約は `spawnKit.feetPosition` = `surfaceY + 1` = 50 との整合だけである
-(`domain/launch-options.ts`、`test/launch-options.test.ts` が 49 / 50 をリテラルで固定している)。
-
-海面基準の根拠を本当に持たせたいなら既定は 64(= `SEA_LEVEL + 1`)であるべきだが、
-それは既定値の変更であり、`DEFAULT_FLAT_WORLD` / `DEFAULT_SPAWN_KIT` と
-それを固定しているテストの変更を伴う。**本文書は現在の実装値 49 を記述するにとどめ、
-誤った根拠のほうを取り下げる。** なお `domain/launch-options.ts:103` のコメントにも
-`SEA_LEVEL as 48` が残っている(別途訂正が必要)。
-
-「ミニ」と「平地」はどちらも意味がある。**平地**なのは、レッドストーンリピータを検証している
-プレビューが同時に洞窟カーバーも検証してしまわないため。**ミニ**なのは、起動バジェットが
-1 秒で、その中の最大項目が地形生成だから（[design-notes.md](./design-notes.md) DN-02）。
-
-### 2.5 `spawnKit` — 何を持って、どこに立つか
-
-```typescript
-export type ItemId = string        // 暫定。本来は mc-kernel の ItemType
-export type HotbarSlot = { readonly item: ItemId; readonly count: number }
-
-export type SpawnKit = {
-  readonly feetPosition: Position   // 足元原点。既定 (0, 50, 0)
-  readonly yawRadians: number       // 既定 0（-Z を向く）
-  readonly pitchRadians: number     // 既定 0（水平）
-  readonly hotbar: ReadonlyArray<HotbarSlot>
-}
-```
-
-**`feetPosition` は足元原点であり、AABB 中心でも目線でもない。** plan.md §3.4:
-
-> ブロックは `[y, y+1]` を占有。スポーンと物理平面は `surfaceY+1` 基準
-> 「物が浮く」バグ類は例外なく**足元原点 vs AABB中心のY規約不一致**が原因
-
-既定は `surfaceY + 1 = 50`。`surfaceY` そのものに置くと足元がブロックの中に入り、
-衝突リゾルバが 1 フレーム目に**目に見える形で**上へ押し出す。
-現状は `feetPosition` というフィールド名で規約を運んでいる（mc-sim と同じ暫定）。
-mc-kernel でブランド型に格上げされたら追随する。
-
-既定のホットバーが空でないのは「最初の 2 操作がチェストを探すことと道具を探すことである
-プレビューは、誰も 2 回は起動しない」から。
-
-**既定のスポーン位置は、上書きされた `world.surfaceY` に追随しない。** 意図的である。
-既定値が他の呼び出し側指定値の関数になると、「何も渡さなければ何が出るか」が
-「この部分集合を渡したら何が出るか」に変わり、部分集合は組合せ爆発する。
-`test/launch-options.test.ts` の
-`the spawn point does NOT follow an overridden surface height` が固定している。
-
-### 2.6 `modules` — plan.md §4.1 の契約の半分
-
-```typescript
-export type PreviewModule = Pick<GameModule<never, never, never>, 'frameStages'>
-```
-
-**`GameModule` の `frameStages` だけを取り、`layers` は取らない。**
-理由 2 つは [responsibility.md](./responsibility.md) §3.3 に詳述（compose の仕事の二重実装になる /
-異種リストが型付けできない）。
-
-新しい interface を書かず `Pick` にしてあるのは、
-
-- 本物の `GameModule` が構造的にそのまま代入できるようにするため
-- plan.md §4.1 が変わったらこのファイルが壊れるようにするため
-
-の 2 点。
-
-付随する公開関数:
-
-```typescript
-export const flattenStages:
-  (modules: ReadonlyArray<PreviewModule>) => ReadonlyArray<StageRegistration>
-
-export type StageOrderViolation = {
-  readonly stage: StageId
-  readonly mustFollow: StageId
-  readonly declaredIndex: number
-  readonly constraintIndex: number
-}
-
-export const stageOrderViolations:
-  (modules: ReadonlyArray<PreviewModule>) => ReadonlyArray<StageOrderViolation>
-```
-
-`stageOrderViolations` は**トポロジカルソートではない**。
-[architecture.md](./architecture.md) §4.3 が全文。以下は違反にしない:
-
-- **不在の stage を指す `after`** — `mc-kernel/domain/frame.ts:46-54` が
-  「不在の stage へのエッジは無いものとして扱う」と定めている。プレビューは定義上
-  ゲームの部分集合なので、これがここでは常態
-- **自己エッジ・重複 ID** — 重複 ID の意味を決めるのは compose であって、ハーネスではない。
-  最初の出現位置を採り、それ以上は言わない
-
-## 3. `PlaygroundHandle` — 「起動済みミニゲーム」
-
-```typescript
-export type PlaygroundHandle = {
-  readonly options: ResolvedLaunchOptions
-  readonly timings: ReadonlyArray<PhaseTiming>
-  readonly budget: BootBudgetVerdict
-  readonly stageOrderWarnings: ReadonlyArray<StageOrderViolation>
-  readonly submitFrame: (dt: DeltaTimeSecs) => Effect.Effect<void>
-  readonly framesRendered: Effect.Effect<number>
-  readonly cameraPose: Effect.Effect<CameraPoseSnapshot>
-  readonly isRunning: Effect.Effect<boolean>
-  readonly stop: Effect.Effect<void>
-}
-```
-
-| メンバ | 意味 |
-| --- | --- |
-| `options` | 既定を埋めた後の値。**要求した設定ではなく、実際に起動した設定** |
-| `timings` | phase ごとの実測。順序は `BOOT_PHASE_ORDER` |
-| `budget` | `timings` の判定結果（§4）。起動時にログにも出る |
-| `stageOrderWarnings` | 空でなければ、そのプレビューは作者自身の制約と矛盾する順序で動いている |
-| `submitFrame` | フレームを 1 つ投入。停止後は**黙って無視**する |
-| `framesRendered` | この起動でポンプが完了したフレーム数。**起動直後は 1**（boot が 1 フレーム回すため）。停止後は 0 |
-| `cameraPose` | mc-sim が発行した姿勢の**読み取り**。書き戻す口は無い |
-| `isRunning` | |
-| `stop` | 冪等・非ブロッキング。boot の**逆順**で detach |
-
-前 4 つが Effect ではなく素の値なのは、**ハンドルが存在する時点で boot は終わっている**から。
-変わりようがないものを Effect にすると、呼び出し側に「いつ読むべきか」という無い問題を与える。
-
-### 3.1 `submitFrame` が delta を取る理由
-
-タイムスタンプではなく delta を取り、クランプは一切しない。
-[responsibility.md](./responsibility.md) §3.5 に理由。要約: クランプは mc-sim の所有物であり、
-2 つ目の実装が食い違ったときの症状は「床抜け」= 物理のバグに見える。
-
-`test/playground.test.ts` の `does no clamping of its own — mc-sim owns the delta clamp` が
-30 秒の delta を素通しすることを assert している。**これは仕様であって手抜きではない**、
-という主張をテスト名に込めてある。
-
-### 3.2 1 フレームの中身
-
-```
-simulation.tick(dt)
-  → 呼び出し側 stage を宣言順に run(dt)      （ClockPort を provide）
-  → simulation.cameraPose                    （plan.md §4.2 の camera-mirror に相当）
-  → renderer.renderFrame(dt, pose)
-```
-
-plan.md §4.2 の標準 stage 順序から、プレビューに無いものを削った骨格である。
-`cameraPose` の読み取りが simulation の**後**にあることが、姿勢所有権の実行順序上の表現。
-
-全体は `Effect.catchAllCause` で包む。`catchAll` ではない: stage 内の throw は `Cause.Die` になり、
-`catchAll` はそれを見逃してポンプごと落とす。**1 フレーム目で真っ黒になるプレビューは
-何も教えてくれない**（`ts-minecraft/packages/game/application/game-loop.ts:123-125` と同じ判断）。
-
-## 4. 起動バジェット API
-
-```typescript
-export type BootPhase =
-  | 'resolve-options' | 'world' | 'simulation' | 'renderer'
-  | 'input' | 'modules' | 'first-frame'
-
-export const BOOT_PHASE_ORDER: ReadonlyArray<BootPhase>
-export const BOOT_PHASE_BUDGET_MILLIS: Readonly<Record<BootPhase, DurationMillis>>
-export const BOOT_BUDGET_MILLIS: DurationMillis   // 1000
-
-export type DurationMillis = number & Brand.Brand<'DurationMillis'>
-export const elapsedMillis: (fromSecs: number, toSecs: number) => DurationMillis
-
-export type PhaseTiming = { readonly phase: BootPhase; readonly durationMillis: DurationMillis }
-export type PhaseOverrun = { phase; durationMillis; budgetMillis; overByMillis }
-
-export type BootBudgetVerdict = {
-  readonly withinBudget: boolean
-  readonly totalMillis: DurationMillis
-  readonly overBudgetMillis: DurationMillis
-  readonly missingPhases: ReadonlyArray<BootPhase>
-  readonly overrunPhases: ReadonlyArray<PhaseOverrun>
-}
-
-export const classifyBootTimings: (timings: ReadonlyArray<PhaseTiming>) => BootBudgetVerdict
-export const describeBootVerdict: (verdict: BootBudgetVerdict) => string
-```
-
-| phase | 配分 (ms) | 所有リポジトリ |
-| --- | ---: | --- |
-| `resolve-options` | 5 | kit（純粋関数） |
-| `world` | 400 | mc-worldgen |
-| `simulation` | 120 | mc-sim |
-| `renderer` | 300 | mc-render |
-| `input` | 25 | **mc-render**（plan.md §2.3-2） |
-| `modules` | 50 | 呼び出し側 |
-| `first-frame` | 100 | 全員 |
-| **合計** | **1000** | |
-
-**配分は実測ではなく割り当てである。** Port の向こうに実装が無いので、まだ 1 度も
-実際に計測されていない。それでも今記録するのは、着手前に合意したバジェットは設計制約であり、
-後から導出したバジェットは起きたことの記述にすぎないからである。
-`test/boot-phase.test.ts` が合計 1000 をリテラルで固定しているので、
-後の再配分は 1 秒の中でやるしかない。
-
-判定の 2 つの決定事項（どちらも [design-notes.md](./design-notes.md) DN-02 に理由）:
-
-- **phase が欠けていたら `withinBudget: false`。** 何もしない起動が最速になる指標は、
-  作業を速くするのではなく削ることを推奨してしまう
-- **合計が範囲内でも、自分の配分を超えた phase は報告する。** レンダラがたまたま速くて
-  収まっている `world` は、ワールドが少し育った瞬間に破綻する
-
-`input` が最安なのに独立した phase なのは、その所有権が本リポジトリの憲法だからである
-（[architecture.md](./architecture.md) §4.2）。名前と数字のある行項目は、
-`renderer` に畳み込まれた手順より、こっそりローカル実装される可能性が低い。
-
-## 5. Port（`application/preview-ports.ts`）
-
-4 つ。plan.md §3.10 の依存リストと 1 対 1（mc-kernel は語彙であってサービスではないので現れない）。
-
-```typescript
-export type WorldProviderService = {
-  readonly openFlatWorld: (spec: FlatWorldSpec) => Effect.Effect<void>
-  readonly closeWorld: Effect.Effect<void>
-}
-
-export type SimulationService = {
-  readonly spawn: (kit: SpawnKit) => Effect.Effect<void>
-  readonly tick: (dt: DeltaTimeSecs) => Effect.Effect<void>
-  readonly cameraPose: Effect.Effect<CameraPoseSnapshot>   // 読み取りのみ
-  readonly stop: Effect.Effect<void>
-}
-
-export type RendererService = {
-  readonly attach: Effect.Effect<void>
-  readonly renderFrame: (dt: DeltaTimeSecs, pose: CameraPoseSnapshot) => Effect.Effect<void>
-  readonly detach: Effect.Effect<void>
-}
-
-export type PreviewInputService = {
-  readonly attach: Effect.Effect<void>
-  readonly detach: Effect.Effect<void>
-}
-
-export type PlaygroundPorts = WorldProviderPort | SimulationPort | RendererPort | InputPort
-```
-
-`openFlatWorld` が `generateChunk`（plan.md §3.7 の実 API）ではないのは、
-**ハーネスがチャンク座標を選ぶ筋合いが無い**から。「この形の平地を、立てる状態で」とだけ言い、
-それが何コストかは mc-worldgen が決める。
-
-`renderFrame` が姿勢を引数で受けるのは §3.2 のとおり。
-
-## 6. Browser lifecycle（`application/browser-preview.ts`）
-
-ブラウザ向けプレビューは `makeBrowserPreview(options)` が返すインスタンス単位の API で管理する。
-`startRuntime` は mc-compose の `BrowserRuntimeModule` / `composeGame` と描画・入力 mount をつなぐ
-構造的な adapter 境界であり、本パッケージが第 2 の composition root になることを避ける。
-
-```typescript
-export type BrowserPreviewApi = {
-  readonly start: Effect.Effect<BrowserPreviewHandle, BrowserPreviewStartError>
-  readonly restart: Effect.Effect<
-    BrowserPreviewHandle,
-    BrowserPreviewStartError | BrowserPreviewStopError
-  >
-  readonly current: Effect.Effect<Option.Option<BrowserPreviewHandle>>
-  readonly stop: Effect.Effect<void, BrowserPreviewStopError>
-}
-
-export const makeBrowserPreview: (
-  options: BrowserPreviewOptions,
-) => Effect.Effect<BrowserPreviewApi>
-```
-
-同一インスタンスへの重複 `start` は同じ handle を返す。`restart` は旧 generation を完全停止してから
-新しい canvas/runtime を起動する。生成した canvas、RAF、AbortSignal listener、adapter が登録した
-cleanup は generation が所有し、開始失敗時にも逆順で rollback される。呼び出し側から渡された canvas
-は停止時に DOM から除去しない。
-
-`BrowserPreviewRuntime.frame` は直列に実行され、完了するまで次の RAF を予約しない。`stop` / `restart` /
-外部 abort は実行中の frame fiber を interrupt し、その release 完了後に runtime の `stop` と cleanup を
-実行する。したがって adapter は非同期の frame Effect を返しても、解放済み renderer/input と競合しない。
-
-`InputPort` に実装が無いことについては [responsibility.md](./responsibility.md) §3.1。
-
-## 7. 参照実装との照合
-
-plan.md §3.10 の移植元は **「なし（新規）」**。以下は「対応物がある / ない」の明示である。
-
-| 本リポジトリの要素 | 参照実装の対応物 | 判定 |
-| --- | --- | --- |
-| 起動シーケンス（world → sim → renderer → input） | `packages/app/application/main/session-bootstrap-orchestration.ts`（231 行） | **近縁。ただし性質が違う**。§6.1 |
-| `LaunchOptions` の正規化 | **無い**。参照実装のセッションは `BootContext` + 40 近いサービスを引数で受け取る | 新規 |
-| 起動バジェット / phase 別計測 | **無い**。参照実装が持つのは逆で、最低表示時間 2500ms と FPS ゲート（`session-loading-gates-state.ts:1-5`） | 新規。§6.2 |
-| 再入可能な `launch` + 明示 `stop` | `packages/game/application/game-loop.ts:141-148, 198-201` | **概念は同一**。参照実装は後付け、こちらは初日から |
-| dropping queue のフレームポンプ | `packages/game/application/game-loop.ts:106` | 同一（容量 60 も同じ） |
-| `catchAllCause` によるフレーム防護 | `packages/game/application/game-loop.ts:123-125` | 同一 |
-| stage 順序の検査 | **無い**。参照実装は合成層に全順序をハードコードしている | 新規 |
-| `InputPort`（実装なし） | `packages/presentation/input/input-service.ts`（337 行） | **意図的に持たない**。所有権は mc-render |
-
-### 6.1 参照実装のセッション起動との違い
-
-`session-bootstrap-orchestration.ts` は `buildSessionBootstrapOrchestration(deps)` という
-単一関数で、冒頭 50 行が `rendering` / `world` / `gameplay` / `presentation` / `inventory` /
-`entity` / `multiplayer` の 7 グループから**約 40 個のサービスを分解代入**している（:27-54）。
-そこから scene → world → mods → lighting → runtime と積み上げ、最後に 7 個の値を返す。
-
-これは**出荷ゲームのセッションとしては正しい**。本物のセッションはこれら全部を必要とする。
-
-kit がやるのは同じことの縮小版ではない。**4 つの Port しか知らない**。
-プレビューが必要としないもの（ポーズメニュー、実績、村、ネザー、mods、マルチプレイヤーの
-シード交渉）を「小さくする」のではなく、**最初から知らない**。
-これが 231 行と 1 関数の違いを生んでいる。
-
-### 6.2 起動時間の対比 — 参照実装の実測定数
-
-```
-packages/app/application/main/session-loading-gates-state.ts:1
-  const MIN_LOADING_SCREEN_DURATION_MS = 2500
-packages/app/application/main/session-loading-gates-state.ts:2-5
-  const INITIAL_FPS_GATE_TARGET = 120
-  const INITIAL_FPS_GATE_TIMEOUT_MS = 8_000
-  const INITIAL_FPS_GATE_POLL_MS = 100
-  const INITIAL_FPS_GATE_STABLE_SAMPLES = 10
-
-packages/app/application/main/session-lifecycle-startup.ts:104-105
-  yield* waitForInitialFrameRate(runtimeParams.hud.fpsElement)
-  yield* loadingScreen.hide()
-```
-
-120fps を 100ms 間隔で 10 サンプル連続 = **最低 1 秒のポーリング**を、
-**2.5 秒のローディング画面最低表示**の上に積む。タイムアウトは 8 秒。
-
-ゲームとしては正しい。プレイヤーがワールドを開くのは 1 日に数回で、
-最初の可視フレームの前に安定したフレームレートが出ていることには待つ価値がある。
-
-**プレビューには致命的である。** レッドストーンのルールをいじっている開発者は
-1 時間に何十回も relaunch する。1 回あたり 2.5 秒の強制待機は、
-仮説を確かめるか確かめないかの差になる。**kit がこのパスを継承しないことが存在理由**である。
-`test/boot-phase.test.ts` の
-`REGRESSION: the whole budget is smaller than the reference session could ever be` が
-`BOOT_BUDGET_MILLIS < 2500` を assert している。
-
-## 8. APIロック
-
-plan.md §6 Step 0-3。**実装済みで、§9 のツール選定も決着している。**
-
-| 項目 | 内容 |
-| --- | --- |
-| 生成物 | リポジトリ直下の `api-lock.md`（公開宣言 43 件 + 参照されている非 export 宣言 23 件。コミット対象） |
-| 生成器 | `scripts/api-lock.ts`（16 リポジトリに byte-identical で vendor。`scripts/check-dependency-whitelist.ts` と同じ方式で、編集してよいのは `REPOSITORY_POLICY` だけ） |
-| 検査 | `pnpm api:check` — `api-lock.md` が実際の公開 API と食い違えば非ゼロ終了 |
-| 更新 | `pnpm api:update` |
-| 配線 | `pnpm verify` の `check:deps` と `test` の間、および CI の `API lock` ステップ |
-| 追加依存 | **なし**（`typescript` は既に devDependency） |
-
-`@microsoft/api-extractor` を先に試して却下した経緯・実測・仕組み・限界は
-mc-kernel の `docs/versioning.md` §7 が正本。ここでは kit にとっての意味だけ書く。
-
-**本リポジトリの API ロックの優先度は、mc-sim ほど高くない。**
-下流が devDependency のみなので、界面が揺れても出荷ビルドは壊れないためである
-（[versioning.md](./versioning.md) §3.1）。それでも 2 つの点で確かに効いている。
-
-**1. §2.1 の契約が型として写る。** 「`launchPlayground()` が無引数で完結する」は
-`api-lock.md` にこう記録されている:
-
-```ts
-const launchPlayground: (options?: LaunchOptions | undefined) => Effect.Effect<PlaygroundHandle, never, Playground | ClockPort | PlaygroundPorts>;
-```
-
-`options` から `?` が消える変更、あるいは `R` に新しい Tag が増える変更は、
-15 リポジトリのプレビューに定型文を強制する破壊的変更であり、そのまま diff になる。
-
-**2. 4 つの Port が `Context.Tag` である。** `InputPort` / `RendererPort` / `SimulationPort` /
-`WorldProviderPort` と `Playground` は、declaration emit の 2 分割（`Xxx_base` + 空の殻）で出る。
-api-extractor はこの `Xxx_base` を「forgotten export」として落とし、Tag 識別子文字列と
-束ねられた service 型を捨てる —— つまり Port が Port である理由が丸ごと消える。
-自前の `scripts/api-lock.ts` は「公開面が参照している非 export の宣言」を第 2 節に取り込むので、
-`'@nerima-games/mc-playground-kit/InputPort'` などの文字列がロックに残る。
-`supporting declarations: 23` の大半はこれである。
-kit の Port は将来 mc-worldgen / mc-sim / mc-render の Layer が満たすものなので、
-この文字列が黙って変わることは「実装の無い Port」を作ることに等しい。
-
-**[versioning.md](./versioning.md) §4.1 の「持たないことの約束」もここで守られる。**
-`setCameraPose` や `resolveStageOrder` が公開シンボル一覧に**現れた**ら、
-それが違反である。ロックは追加も削除も等しく diff にする。
-
-捕まえないもの: **値**（`BOOT_BUDGET_MILLIS` は `DurationMillis` としか写らないので、
-1000 → 3000 の変更はロックに映らない。versioning.md §4.2 の議論はそのまま生きており、
-守るのは `test/boot-phase.test.ts` である）、**挙動**、
-**interface / 型リテラルのメンバ順**（ソース順を保つので並べ替えは diff になる）。
+| options | Total options used by this generation. |
+| timings | Boot phase timings in execution order. |
+| budget | Result of classifyBootTimings. |
+| stageOrderWarnings | Declared after constraints violated by declaration order. |
+| submitFrame(at) | Submit a monotonic timestamp to the generation. |
+| framesRendered | Processed frames, including the boot frame while running. |
+| framesDropped | Timestamps rejected by the bounded mc-sim queue. |
+| secondsLostToClamp | Time removed by the loop's maximum-delta clamp. |
+| cameraPose | Read-only pose published by the simulation port. |
+| isRunning | Whether the generation still accepts work. |
+| stop | Idempotent teardown. |
+
+The first accepted timestamp uses FIRST_FRAME_DELTA_SECS, as defined by
+mc-sim. A stopped handle accepts no further work.
+
+## Injected ports
+
+launchPlayground requires:
+
+~~~ts
+export type PlaygroundPorts =
+  | WorldProviderPort
+  | SimulationPort
+  | RendererPort
+  | InputPort
+~~~
+
+The services are deliberately lifecycle-oriented:
+
+- WorldProviderService.openFlatWorld / closeWorld
+- SimulationService.spawn / tick / cameraPose / stop
+- RendererService.attach / renderFrame / detach
+- PreviewInputService.attach / detach
+
+These are composition boundaries, not implementations of the upstream
+packages. A caller can provide an Effect Layer backed by
+mc-worldgen.ChunkStore, mc-sim services, mc-render, or test doubles.
+
+## Boot phases
+
+BOOT_PHASE_ORDER, BOOT_PHASE_BUDGET_MILLIS, classifyBootTimings, and
+describeBootVerdict are pure domain APIs. DurationMillis is a local measurement
+brand because the kernel's monotonic clock brands represent a different unit
+and meaning.
+
+## Browser preview
+
+makeBrowserPreview requires a container and a runtime factory:
+
+~~~ts
+const api = yield* makeBrowserPreview({
+  container,
+  startRuntime: (surface) =>
+    Effect.succeed({
+      frame: (delta) => renderAndStep(surface, delta),
+      stop: Effect.void,
+    }),
+})
+const handle = yield* api.start
+yield* handle.stop
+~~~
+
+The factory may return a runtime without frame; in that case the kit manages
+the surface lifecycle but does not schedule RAF work. A supplied canvas is
+borrowed. A canvas created by the kit is removed during teardown.
+
+start is idempotent while a generation is active. restart stops the old
+generation before starting a new one. An aborted start rolls back an owned
+canvas and registered cleanup callbacks.
+
+## Compatibility
+
+There are no legacy aliases for the old delta-based frame API or local item
+identifiers. Callers must submit MonotonicTimeSecs values and use mc-kernel's
+ItemType.

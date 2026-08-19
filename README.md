@@ -1,309 +1,197 @@
 # @nerima-games/mc-playground-kit
 
-## 責務
-
-プレビュー用共通ハーネス。「ミニ平地ワールド + カメラ + レンダラ + 入力」を **1 秒で起動する糊**。
-
-plan.md §3.10 はこのリポジトリを **最も丁寧に作る部品** と名指ししている:
-
-> **全プレビューの開発体験がここの起動速度と安定性に依存する**
-
-他の 15 リポジトリの完了条件（plan.md §6 Step 2）はすべて「内蔵プレビューが操作可能」を含み、
-そのプレビューは全部ここを通って起動する。ここが遅ければ全員が遅く、
-ここが不安定なら全員が不安定になる。
-
-詳細は [`docs/responsibility.md`](./docs/responsibility.md)（**非スコープの明示を含む**）。
-
-## このパッケージは devDependency である。常に。
-
-plan.md §2.3-2:
-
-> kit は devDependency 専用のため、kit に入力を置くと本番ゲームから入力が消える。
-> kit の役割は「ミニ世界 + カメラ + レンダラ + 入力を1秒で束ねる糊」に限定
-
-これは帳簿上のルールではない。**実行時入力サービスが mc-render にあるのは、
-このハーネスが出荷されないからである。** 入力をここに置けば、リリースビルドは
-ビルドが通り、起動し、描画し、キーボードを完全に無視する。
-
-故障の経路を具体的に書く。4 と 5 の間に人間のレビューしか無い状態にはしない、
-というのがこの規則である。
-
-1. mx-gameplay の開発者が、プレビューで動く入力処理を便利だと思う
-2. 出荷コードから `import { InputService } from '@nerima-games/mc-playground-kit'` する
-3. **ローカルでは動く**（dev-meta workspace には kit がある）
-4. **`pnpm build` は通る**（TypeScript 的には何も間違っていない）
-5. **出荷ビルドに kit が含まれないので、リリースされたゲームはキーボードに反応しない**
-
-`InputPort` はこのリポジトリで **Tag だけがあり実装が無い**。その不在が設計である。
-型システムが構造的に守っている: これを満たすには、規則が禁じている実装をここに書くしかない。
-
-強制は機械的に行われる（`scripts/check-dependency-whitelist.ts`）。
-16 リポジトリ全部が同じスクリプトを持つので、どこで違反してもそのリポジトリの CI が落ちる。
-
-| 違反 | 検出ルール |
-| --- | --- |
-| どこかの `dependencies` に kit がある | `dev-only-package-in-dependencies` |
-| 出荷ソース（`index.ts` / `domain/` / `application/`）から kit を import | `dev-only-package-in-shipped-source` |
-
-**逆向きの誤解に注意**: 制約は「誰が kit に依存してよいか」についてのものである。
-kit 自身が mc-worldgen / mc-sim / mc-render に依存するのは正常な実行時依存であり、
-プレイグラウンドは実際に世界とシミュレーションとレンダラを実行時に構築する。
-
-**既知の限界**: 本リポジトリ自身のコピーでは `dev-only-package-in-shipped-source` は発火しない
-（自己 import 判定が先に走り `self-import` が勝つ）。import 側の規則は他の 15 リポジトリの
-コピーでのみ検証される。実測と対処は [`docs/design-notes.md`](./docs/design-notes.md) DN-01。
-
-## 依存
-
-| 依存先 | 何をもらうか | Port |
-| --- | --- | --- |
-| `mc-kernel` | 公開済みの共有語彙。どのリポジトリからも import 可（許可リストに書かずに import できる） | — |
-| `mc-worldgen` | ミニ平地ワールドの生成・破棄 | `WorldProviderPort` |
-| `mc-sim` | スポーン / tick / `CameraPoseSnapshot` の読み取り / 停止 | `SimulationPort` |
-| `mc-render` | 描画一式 | `RendererPort` |
-| `mc-render` | **実行時入力サービス** | `InputPort`（**実装無し**） |
-
-`mc-meshing` / `mc-physics` / `mc-save` / `mc-noise` は **import できない**（推移依存）。
-`mc-audio` と `mx-*` / `mc-compose` には到達すらしない。
-
-`@nerima-games/mc-kernel` は公開済みの直接依存であり、共有語彙は同パッケージから直接
-import している。`mc-meshing` / `mc-physics` / `mc-save` は引き続き Port 越しに受け取るため、
-kernel の直接依存化でサービス境界が変わるわけではない。
-
-publish 後も Port のままにする理由は [`docs/design-notes.md`](./docs/design-notes.md) DN-07:
-E2E 環境が SwiftShader かつポインタロック不可である以上、起動順序・後始末順序・再入可能性は
-**Node で検証しなければならない**。
-
-## このリポジトリの位置づけ
-
-4 層アーキテクチャの**基盤**層。ただし他の基盤 3 つ（worldgen / sim / render）とは性質が違い、
-**出荷物ではなく開発ツール**である。
-
-```
-mx-gameplay ┐
-mx-redstone ┘ …… devDependency としてのみ参照（点線）
-                        ┊
-              mc-playground-kit
-                        ↓
-         mc-worldgen / mc-sim / mc-render  (+ mc-kernel)
-```
-
-**kit に入ってくる実行時エッジは 1 本もない。**
-`test/check-dependency-whitelist.test.ts` の
-`this repository sits at the TOP of the runtime graph: nothing depends on it` が
-依存グラフ 16 行を走査してこれを assert している。入ってくるエッジが無いパッケージは、
-事故で実行時依存になれない。なるには `package.json` を明示的に編集するしかなく、
-それはゲートが捕まえる。
-
-構築順（plan.md §6 Step 2）は `worldgen → sim → render → kit → gameplay / redstone → ui →
-multiplayer → compose`。**kit は基盤の最後**であり、ここから先の体験モジュールは
-すべてこのハーネスの上でプレビューされる。
-
-依存グラフ全体・4 階層・名詞/動詞ルール・**devDependency 専用規則の全詳細**・
-stage 全順序の所有者は [`docs/architecture.md`](./docs/architecture.md) を参照。
-
-### 依存ルール（16 リポジトリ共通）
-
-| ルール | 内容 |
-| --- | --- |
-| ハード失敗 | 違反があれば CI は必ず非ゼロ終了する。警告で済ませない |
-| 循環禁止 | 循環依存は一切許可しない。「co-evolution ペア」のような例外リストは設けない |
-| 推移閉包の禁止 | A→B、B→C のとき A は C を import できない |
-| kernel は例外 | mc-kernel はどこからでも import 可（`dependencies` への記載は必要） |
-| 宣言と実体の一致 | import する `@nerima-games/*` は `package.json` に記載必須 |
-| mc-playground-kit は devDependency 専用 | **本リポジトリのこと。** 上記参照 |
-| `Date.now()` 禁止 | 時刻はすべて注入された Clock Port から取得する |
-
-`scripts/check-dependency-whitelist.ts` は 16 リポジトリ共通のテンプレートである。
-冒頭で囲ってある `REPOSITORY_POLICY` 定数だけを書き換え、それ以外はそのままコピーする。
-本リポジトリの版は **plan.md §2.1 の 16 リポジトリ全行**を保持しており、循環検査が全体を見る。
-
-### `Date.now()` 禁止の実装方法
-
-oxlint 0.12 は `no-restricted-syntax` も `no-restricted-properties` も実装しておらず、
-`no-restricted-globals` は `oxlint --rules` の一覧に出るものの実装されていない
-（mc-kernel で 0.12.0 に対し実測確認済み。3 ルールすべて設定した状態で `Date.now()` を書いても診断 0 件）。
-
-そのため禁止は **`scripts/check-dependency-whitelist.ts` 側で実装**している。
-対象は `Date.now()` / `new Date()` / `performance.now()` の 3 つ。
-コメント・文字列リテラル・正規表現リテラルの中身はマスクされるので誤検知しない。
-
-**このリポジトリでは `performance.now()` が特に危険である。** 起動時間の計測が責務の中心にあり、
-素朴に書けば必ず `performance.now()` に手が伸びる。起動時間の計測も注入された Clock Port から行う。
-その結果として**起動バジェットのテストが Node で決定論的に走り、CI マシンの負荷で落ちない**
-（[`docs/design-notes.md`](./docs/design-notes.md) DN-09）。
-
-Clock Port の実装アダプタだけは `mc-kernel-allow-time-source` コメントで除外できるが、
-**そのアダプタは本リポジトリには無い**（kit は `ClockPort` を要求する側）。
-
-## 使い方
-
-```typescript
-import { Effect } from 'effect'
-import { launchPlayground, PlaygroundLayer } from '@nerima-games/mc-playground-kit'
-
-const program = Effect.gen(function* () {
-  // 引数ゼロで完結する。これが本リポジトリの中心的な契約。
-  const playground = yield* launchPlayground()
-
-  console.log(playground.budget)          // 起動バジェットの判定（ログにも出る）
-  yield* playground.submitFrame(dt)       // dt は mc-sim の clampFrameDelta を通した値
-  yield* playground.stop                  // boot の逆順で teardown
-})
-
-// PlaygroundLayer に加えて ClockPort / WorldProviderPort / SimulationPort /
-// RendererPort / InputPort を provide する。実装は各親リポジトリが提供する。
-```
-
-`launchPlayground()` が**引数ゼロで立って歩けるワールドを出す**ことが契約である。
-これが崩れると 15 リポジトリのプレビューがそれぞれ定型文を持ち、その定型文が drift する。
-
-2 回目の `launchPlayground()` は 1 回目を**自動的に破棄する**（ホットリロードの実態）。
-これが自由関数ではなくサービス経由である理由:
-自由関数は、自分が知らない過去の起動を後始末できない。
-
-API 全体は [`docs/public-api.md`](./docs/public-api.md)。
-
-### Browser lifecycle
-
-ブラウザでは `makeBrowserPreview` が canvas、RAF、abort、DOM listener と実ランタイムの
-寿命を一世代として所有する。`startRuntime` は構造的な境界なので、mc-compose の
-`BrowserSession` と renderer/input の mount adapter を結合した結果をそのまま返せる。
-
-```typescript
-const preview = yield* makeBrowserPreview({
-  container: document.querySelector('#game')!,
-  startRuntime: (surface) => Effect.gen(function* () {
-    const session = yield* startBrowserSession(runtimes)
-    const mount = yield* mountGame(session.game, surface)
-    surface.onCleanup(() => mount.removeListeners())
-    return {
-      frame: mount.frame,
-      stop: Effect.zipRight(mount.stop, session.stop),
-    }
-  }),
-})
-
-const running = yield* preview.start   // 二重 start は同じ世代を返す
-yield* preview.restart                 // hot reload: 旧世代を停止して再 mount
-yield* running.stop                    // 冪等。所有 canvas/RAF/listener も解放
-```
-
-呼び出し側から渡した canvas は削除せず、kit が生成した canvas だけを削除する。
-起動途中で失敗した場合も、登録済み cleanup と所有 canvas を rollback する。
-`frame` Effect は完了後にだけ次の RAF を予約するため、遅いフレーム同士は重ならない。
-停止時は実行中の frame fiber を interrupt して release を待ってから runtime と DOM 資源を解放する。
-
-## 開発
-
-### セットアップ
-
-```console
-$ direnv allow          # flake.nix の devShell で nodejs_24 + corepack が入る
-$ pnpm install
-```
-
-Nix を使わない場合は Node.js 24 以上と pnpm 11（`corepack` 推奨）を用意する。
-
-> **注意**: ツールチェーンは `devenv.nix` から `flake.nix` + `flake.lock` に移行済みである。
-> `flake.lock` はコミットされているので、`nix develop`（`.envrc` は `use flake`）は
-> 誰の手元でも同じ nixpkgs に解決される。`devenv.nix` / `devenv.lock` はもう存在しない。
-
-### コマンド
-
-| コマンド | 内容 |
-| --- | --- |
-| `pnpm typecheck` | `tsconfig.build.json` / `tsconfig.test.json` / `tsconfig.preview.json` の 3 プロジェクトを型検査 |
-| `pnpm lint` | oxlint（このリポジトリ唯一の lint / format 設定。prettier も biome も .editorconfig も置かない）。**`--deny-warnings` 付きで走る**ため、`warn` のルールもビルドを落とす（`.oxlintrc.json` は 5 カテゴリすべてと個別 67 ルールが `warn`、`error` は 4 つだけ。このフラグが無かった頃は実質その 4 つしかゲートになっていなかった） |
-| `pnpm lint:fix` | oxlint の自動修正 |
-| `pnpm preview` | 内蔵プレビュー（ハーネスが自分自身をプレビューする）。**`pnpm verify` には入らない**。[`apps/preview-harness/README.md`](./apps/preview-harness/README.md) |
-| `pnpm test` | vitest（`@effect/vitest` の `it.effect` が主 API、`environment: 'node'`） |
-| `pnpm test:watch` | vitest watch |
-| `pnpm test:coverage` | カバレッジ計測（閾値は未設定。後述） |
-| `pnpm check:deps` | 依存ホワイトリスト + 循環検査 + `Date.now()` 禁止の検査 |
-| `pnpm api:check` | `api-lock.md` が実際の公開 API と食い違えば非ゼロ終了（[`docs/public-api.md`](./docs/public-api.md) §7） |
-| `pnpm api:update` | `api-lock.md` を書き直す。公開面を変える PR は結果を同じ PR に含める |
-| `pnpm verify` | `typecheck && lint && check:deps && api:check && test`。CI と同じ内容 |
-
-## 現状
-
-**このリポジトリはまだ叩き台（pre-audit first cut）である。**
-
-入っているのは、plan.md §3.10 の「1 秒で起動」と「devDependency 専用」という 2 つの要求を
-**型と回帰テストとして最初から焼き込む**ための最小実装だけ。
-
-| 領域 | 実装 | 設計注意 |
-| --- | --- | --- |
-| devDependency 専用の強制 | `scripts/check-dependency-whitelist.ts` | DN-01 |
-| 起動オプション（引数ゼロで完全な設定になる正規化。純粋・全域） | `domain/launch-options.ts` | DN-02 |
-| 起動予算（7 フェーズ / 合計 1000 ms / 判定関数） | `domain/boot-phase.ts` | DN-02 |
-| 再入可能な `launch` / 取り残し fiber ゼロ | `application/playground.ts` | DN-03 |
-| browser canvas / RAF / abort / mount lifecycle | `application/browser-preview.ts` | DN-03 |
-| teardown は boot の逆順（**input が最初**） | `application/playground.ts` | DN-04 |
-| stage 順序の**検査**（解決ではない） | `domain/launch-options.ts` | DN-05 |
-| deltaTime クランプを**持たない**（mc-sim 所有） | `application/playground.ts` | DN-06 |
-| サービス境界を Port で注入 | `application/preview-ports.ts` | DN-07 |
-| カメラ姿勢は運ぶだけ（書き戻す口が無い） | `application/preview-ports.ts` | DN-08 |
-
-起動フェーズの内訳（`BOOT_PHASE_BUDGET_MILLIS`）。所有リポジトリが phase ごとに違うので、
-内訳は「どのリポジトリを見に行くか」を教える:
-
-| フェーズ | 予算 (ms) | 所有 |
-| --- | ---: | --- |
-| `resolve-options` | 5 | kit（純粋関数） |
-| `world` | 400 | mc-worldgen |
-| `simulation` | 120 | mc-sim |
-| `renderer` | 300 | mc-render |
-| `input` | 25 | mc-render |
-| `modules` | 50 | 呼び出し側 |
-| `first-frame` | 100 | 全員 |
-| **合計** | **1000** | |
-
-参考: 参照実装の出荷セッションは最低 2500 ms のローディング画面
-（`session-loading-gates-state.ts:1`）に、120fps × 10 サンプルの FPS ゲート（同 :2-5、
-タイムアウト 8 秒）を積む。**ゲームには正しく、プレビューには致命的**である。
-これがこのリポジトリが別に存在する理由そのもの（[`docs/design-notes.md`](./docs/design-notes.md) DN-02）。
-
-各 DN の参照実装証跡（file:line）と、書くべき回帰テストの一覧は
-[`docs/design-notes.md`](./docs/design-notes.md)。テストは現在 **5 ファイル / 100 件**。
-
-### まだ無いもの
-
-- **実サービスの Layer。** 4 つの Port はいずれも Tag だけで、mc-worldgen / mc-sim / mc-render の
-  実装を差す Layer が無い。それらが publish されるまで作れない。
-  **したがって「実際に 1 秒で起動する」ことは 1 ミリも検証されていない**
-  — 現状のバジェットテストが見ているのは配分の算術だけである。
-- **自身の最小 E2E**（起動 → 操作 → スクリーンショット。plan.md §3.10 検証）。**完了条件の半分。**
-  Playwright は未導入。E2E は SwiftShader で動き、**ヘッドレスではポインタロックが使えない**
-  （`e2e/gameplay/player-controls.e2e.ts:208`）。操作は mc-render の仮想入力
-  （`setVirtualKey` / `addVirtualLookDelta`）で与える。
-  **E2E に FPS アサーションと起動バジェット検証は置かない** — SwiftShader 下の数値は
-  実機の数値ではないため（[`docs/testing.md`](./docs/testing.md) §2.2）。
-- **`apps/preview-template/`。** consumer が自分のプレビューを作る出発点。
-- **`ItemId` が暫定 `string`。** 本来は mc-kernel の `ItemType`（リテラル union、網羅性チェックつき）。
-- **ビルド／publish はまだない。** `exports` は TypeScript ソースを直接指している。
-  `version` は `0.x` に留める（[`docs/versioning.md`](./docs/versioning.md)）。
-- **カバレッジ閾値は未設定。** 参照実装は 99% を強制しているが、スケルトンに閾値を課しても意味がない。
-  計測とレポートは常に動かしており、99% ゲートは完了条件到達時に有効化する。
-  なお kit のカバレッジは **Port の向こう側を測れない**ので、99% でも起動時間は保証しない。
-- **mc-kernel の語彙は公開 package から直接 import。** ローカルミラーとその専用テストは削除済みで、
-  `index.ts` から再公開していないのは、真実の出所を 2 つにしないため。
-- **`FIRST_FRAME_DELTA_SECS` は暫定複製**（0.016）。mc-sim 公開時に import に置き換えて削除する。
-
-## ドキュメント
-
-[`docs/README.md`](./docs/README.md) が索引。
-
-| ドキュメント | 内容 |
-| --- | --- |
-| [docs/architecture.md](./docs/architecture.md) | 4 階層、全 16 リポジトリの依存グラフ、**devDependency 専用規則の全詳細**、stage 全順序の所有者 |
-| [docs/responsibility.md](./docs/responsibility.md) | 責務と、**明示的な非スコープ**（実行時入力・ゲームルール・stage 全順序・Layer 合成・deltaTime クランプを持たない理由） |
-| [docs/public-api.md](./docs/public-api.md) | `launchPlayground` の実際の型。参照実装との照合（**対応物が無い箇所は無いと明記**） |
-| [docs/design-notes.md](./docs/design-notes.md) | DN-01〜DN-09。参照実装の file:line 証跡つき。**各項目は書くべき回帰テスト名として表現** |
-| [docs/porting.md](./docs/porting.md) | **移植元は無い（新規）。** 引き継ぐのは E2E 環境の知見。近縁コードの**実測 LOC** |
-| [docs/testing.md](./docs/testing.md) | 検証要件、完了条件、E2E に**書かないこと**、カバレッジゲートの投入時期 |
-| [docs/versioning.md](./docs/versioning.md) | 0.x → 1.0.0 方針、**devDependency 専用がバージョニングに与える効果** |
+An Effect-based development preview lifecycle for the Minecraft packages.
+The kit supplies deterministic launch configuration, boot-budget accounting,
+relaunch-safe teardown, and browser/terminal preview boundaries.
+
+This package is an orchestration layer. It is not a complete Minecraft game and
+does not replace the world, renderer, input, physics, or gameplay packages.
+
+## Scope
+
+The kit owns:
+
+- pure launch-option normalization and default spawn data;
+- boot phase timing and budget classification;
+- one-generation-at-a-time playground lifecycle;
+- timestamp-based frame submission through mc-sim makeGameLoop;
+- browser surface and requestAnimationFrame lifecycle;
+- immutable block break/place transitions backed by mc-kernel and mc-sim,
+  including kernel-defined vertical support detachment and falling-block
+  transitions;
+- finite-height sparse `ChunkWorld` storage with configurable vertical origin
+  and kernel-backed chunk codec boundaries;
+- direct `BlockReader` point-query views for sparse `BlockWorld` and finite
+  `ChunkWorld` storage, consumed by targeting, projectile, and single-cell
+  collision queries;
+- block targeting from a player pose backed by mc-sim voxel raycasting and the
+  mc-kernel block registry;
+- arrow block collision delegated to mc-sim voxel raycasting against the
+  mc-kernel-backed sparse world;
+- sparse-world block collision hull queries derived from mc-kernel collision
+  shape definitions;
+- sparse-world fluid occupancy and state-aware volume queries derived from
+  mc-kernel fluid properties;
+- local immutable fluid level, flow, mixing, and scheduled transitions;
+- bounded redstone source, pressure-plate, wire, repeater, comparator,
+  observer, and lamp power transitions;
+- an explicit fixed-tick world-mechanics stage and PreviewModule helper for
+  local fluid and redstone transitions;
+- sparse-world emitted-light source and bounded six-neighbour propagation
+  queries derived from mc-kernel light properties;
+- explosion and primed-TNT transitions delegated to mc-sim with an explicit
+  caller-provided blast profile;
+- furnace transfer, smelting, and output-collection transitions backed by
+  mc-sim;
+- crop planting, growth, bone-meal, and harvest transitions backed by mc-sim
+  crop rules and the mc-kernel block registry;
+- Wither structure summoning and immutable sparse-world consumption backed by
+  mc-sim Wither state transitions;
+- a direct GameplayServicesLayer composition for the standard mc-sim state
+  services, including its crafting and container transactions;
+- a typed gameplayServicesLayerWithEntities factory that composes mc-sim's
+  generic entity roster lifecycle while leaving host behavior types to callers;
+- small injected ports for world, simulation, rendering, and input;
+- deterministic test doubles used by the terminal preview harness.
+
+The kit does not own:
+
+- chunk generation, streaming, authoritative persistence, rendering, pointer
+  lock, physics composition, or input mappings;
+- the authoritative full world or gameplay state; GameplayServicesLayer
+  composes the upstream services but does not replace their ownership;
+- entity-specific behavior, damage, AI, or mob mechanics; the entity helper
+  only exposes mc-sim's generic roster lifecycle;
+- dependency composition or module-layer merging;
+- the complete set of official Minecraft mechanics beyond the implemented
+  block-targeting, projectile-interaction, block-interaction (including the
+  kernel-backed mining-experience handoff, fluid occupancy and state-aware
+  volumes, local fluid transitions, and bounded redstone device transitions),
+  explosion-interaction,
+  furnace-interaction, crop-interaction, and wither-interaction boundaries.
+
+Those responsibilities belong to the upstream packages or to the application
+composition root that supplies the ports.
+
+The root `physics`, `save`, and `worldgen` namespaces expose the published
+upstream APIs directly. The preview lifecycle does not instantiate those
+systems; an application can compose them with the injected world port when it
+owns a generated runtime and authoritative save state.
+
+## Development
+
+The repository uses Node 24, pnpm 11, TypeScript, Effect, Vitest, and the Nix
+development shell. From the repository root:
+
+~~~sh
+nix develop
+pnpm install --frozen-lockfile --ignore-scripts
+pnpm typecheck
+pnpm test:coverage
+pnpm build
+pnpm test:package
+pnpm lint
+~~~
+
+oxlint is provided by Nix, so pnpm lint and pnpm verify must run inside nix
+develop. The CI-equivalent command is:
+
+~~~sh
+nix develop --command pnpm verify
+~~~
+
+pnpm verify runs typechecking, linting, the coverage-enabled test suite, the
+package build, and the generated package runtime smoke test.
+
+## Public entry points
+
+The package root exports the local domain and application APIs together with
+the reusable domain, service, and stage APIs published by `@nerima-games/mc-sim`.
+Those upstream values are re-exported directly; the local modules only add
+world-owned boundaries such as sparse block storage and block transitions:
+
+~~~ts
+import { launchPlayground } from '@nerima-games/mc-playground-kit'
+import { MonotonicTimeSecs } from '@nerima-games/mc-kernel'
+
+const handle = yield* launchPlayground()
+yield* handle.submitFrame(MonotonicTimeSecs(0.016))
+~~~
+
+launchPlayground requires four application-owned services:
+
+- WorldProviderPort
+- SimulationPort
+- RendererPort
+- InputPort
+
+mc-kernel remains the canonical owner of branded vocabulary and registries. The
+package root re-exports its portable public surface directly so callers can use
+one kit import without introducing a second local spelling.
+
+The browser API, port contracts, and exact lifecycle semantics are documented
+in docs/public-api.md.
+
+GameplayServicesLayer, gameplayServicesLayerWithEntities, targetBlock,
+raycastArrowInWorld, blockReaderOf, blockReaderOfChunkWorld, readBlockAt,
+breakBlock, placeBlock, blockCollisionAt,
+blockCollisionFor, blockCollisionsIn, blockContactAt, blockContactsIn,
+blockContactDamageIn, blockFluidAt, blockFluidsIn, blockLightSourceAt,
+blockLightSourcesIn, fluidStateFromWorld, updateFluids, updateRedstone,
+makeWorldMechanicsStage, makeWorldMechanicsPreview,
+removeUnsupportedBlocksAbove, the
+mining-experience handoff, the explosion and primed-TNT interaction functions,
+the furnace, crop, and Wither interaction functions are documented there as
+well.
+
+## Architecture
+
+Pure values and decisions live under src/domain. Effectful lifecycle code
+lives under src/application. The dependency boundary is explicit:
+
+~~~
+caller layers / upstream implementations
+        │
+        ▼
+  mc-playground-kit ports ── mc-sim GameLoop
+        │
+        ▼
+  launch generation and browser lifecycle
+~~~
+
+See docs/architecture.md and docs/responsibility.md.
+
+## Current completeness boundary
+
+The lifecycle and preview contract are implemented and tested. “All official
+Minecraft functionality” is not a property of this repository: missing
+mechanics must be implemented in the appropriate upstream package or in an
+application module, then supplied through the composition boundary. The
+implemented finite-height sparse `ChunkWorld` with configurable vertical origin,
+block targeting, projectile, direct point-reader, and single-cell collision
+lookups,
+block (including vertical support detachment, falling-block transitions,
+collision hull, fluid occupancy, state-aware fluid volumes, local fluid
+level/flow/mixing transitions, emitted-light source queries and bounded
+six-neighbour propagation, and bounded redstone source/wire/device/lamp
+transitions),
+explosion, furnace, crop, and Wither interactions plus direct mc-sim service
+composition, including the optional generic entity roster, are the current
+gameplay boundary. Remaining work is tracked as explicit gaps in the
+architecture and responsibility documents rather than hidden behind
+compatibility adapters.
+
+The fluid and redstone cores are pure immutable local transitions, and
+`makeWorldMechanicsStage` plus `makeWorldMechanicsPreview` provide an explicit
+fixed-tick preview composition, not a claim of full Minecraft parity.
+Block-state variants, exact official tick semantics, chunk-neighbor scheduling,
+fluid collision integration, world-wide composition, and automatic installation
+into a launch remain caller or application responsibilities.
+
+The root `physics`, `save`, and `worldgen` namespaces are direct access points
+to upstream portable functionality; they do not imply that the local preview
+is a complete physics, persistence, or generated-world runtime.
 
 ## License
 
-MIT
+See LICENSE.

@@ -1,189 +1,110 @@
-# 責務
+# Responsibility
 
-出典: plan.md §3.10。以下は原文の責務記述を、スコープ / 非スコープの境界まで展開したもの。
+The repository is intentionally small because each subsystem has one owner.
 
-## 1. 責務（plan.md §3.10 原文）
-
-> プレビュー用共通ハーネス。「ミニ平地ワールド + カメラ + レンダラ + 入力」を1秒で起動する糊。
-> **全プレビューの開発体験がここの起動速度と安定性に依存する — 最も丁寧に作る部品**
-
-一言でいえば「**他の 15 リポジトリのプレビューが、同じ方法で、速く、確実に立ち上がる場所**」。
-
-「糊」という語が正確である。糊は接着するものであって、接着される部品ではない。
-**kit は何も所有せず、何も実装せず、順番と時間と後始末だけを引き受ける。**
-
-## 2. スコープ内
-
-| 領域 | 具体 | 状態 |
+| Area | Owner | This kit's role |
 | --- | --- | --- |
-| 起動オプションの正規化 | `LaunchOptions` → `ResolvedLaunchOptions`。既定値の唯一の置き場 | 実装済 `domain/launch-options.ts` |
-| 既定のミニ平地ワールド | 平地・固定シード・3x3 チャンク・`surfaceY = 49` | 実装済 `DEFAULT_FLAT_WORLD` |
-| 既定のスポーンキット | `surfaceY + 1` に足元、ホットバーに 3 種 | 実装済 `DEFAULT_SPAWN_KIT` |
-| **起動バジェット** | 7 phase・合計 1000ms・phase 別計測と判定 | 実装済 `domain/boot-phase.ts` |
-| 起動シーケンス | world → simulation → renderer → input → modules → first-frame | 実装済 `application/playground.ts` |
-| **決定論的な後始末** | boot の逆順で detach、取り残し fiber ゼロ、再入可能な `launch` | 実装済 `application/playground.ts` |
-| フレームポンプ | dropping queue + `forkDaemon` + 明示 `stop()` | 実装済 `application/playground.ts` |
-| 呼び出し側 stage の実行 | 宣言順で毎フレーム回す | 実装済 |
-| stage 順序の**検査** | 宣言順が `after` 制約と矛盾していないかの警告 | 実装済 `stageOrderViolations` |
-| 姿勢の**運搬** | sim の `CameraPoseSnapshot` を render へ渡す | 実装済（`SimulationPort` → `RendererPort`） |
-| ブラウザプレビューの共通ライフサイクル | canvas 所有権・RAF・再起動・停止・後始末 | 実装済 `application/browser-preview.ts` |
-| 実DOM/WebGLを含むゲームE2E | 起動→操作→スクリーンショット | **mc-compose が所有**（kit はPlaywrightとゲーム実装を持たない） |
+| Branded coordinates, time, items, stages | mc-kernel | Consume the published vocabulary. |
+| Block registry, drops, placeable and replaceable capabilities | mc-kernel | Resolve block and item facts directly; do not copy the registry. |
+| Player, inventory, equipment, vitals, time, crop rules, frame loop | mc-sim | Expose a direct baseline through GameplayServicesLayer and delegate timing to makeGameLoop. |
+| Generic entity roster lifecycle | mc-sim | Expose the typed EntityManagerLayer through gameplayServicesLayerWithEntities; callers own behavior types and entity mechanics. |
+| Player-pose block raycast and hit geometry | mc-sim / mc-physics | Delegate traversal and camera geometry; provide a BlockSource predicate (sparse map or point reader). |
+| Arrow block raycast and impact geometry | mc-sim / mc-physics | Delegate voxel traversal and apply a BlockSource predicate. |
+| Explosion planning and primed-TNT fuse transitions | mc-sim | Delegate bounded deterministic planning; apply the planned block mutation at the world boundary. |
+| Crafting and container storage transitions | mc-sim | Expose the published InventoryService operations through GameplayServicesLayer; do not copy recipes or storage rules. |
+| Anvil payloads, repair, enchantment, naming, cost, and snapshots | mc-kernel | Consume the published `planAnvil` and `applyAnvil` transitions directly; do not lossy-convert their payload state into PlayerStorage. |
+| Sparse block world and break/place transitions | this kit | Combine kernel block facts, including break experience and support rules, with mc-sim PlayerStorage immutably; delegate inventory replacement and tool durability to mc-sim, and leave vitals mutation there. |
+| Vertical support and falling transitions after block breaks | this kit / mc-kernel | Apply the kernel's support-sensitive and falling capabilities to the direct vertical chain above the broken cell, remove unsupported cells immutably, return resolved drops or falling transitions, and leave falling-entity simulation to the caller; horizontal attachment and block-specific scheduled behavior remain outside this slice. |
+| Sparse-world block collision hull queries | this kit / mc-kernel | Project the kernel's published collisionShape definitions into immutable AABBs; single-cell lookups accept BlockSource, while range queries enumerate sparse BlockWorld cells. |
+| Body integration and collision resolution | mc-sim / mc-physics | Consume the upstream solver through mc-sim's physics stages; adapt the local kernel-backed BlockSource to its collision callbacks without copying the solver. The preview lifecycle does not instantiate a physics loop. |
+| Sparse-world fluid occupancy and state-aware volumes | this kit / mc-kernel | Project the kernel's published fluid property into immutable full-cell water/lava records and project local fluid levels and falling state into partial or full-cell AABBs through strict queries. |
+| Sparse-world fluid level, flow, mixing, and scheduling transitions | this kit / mc-kernel | `fluidStateFromWorld` and `updateFluids` provide a bounded immutable local transition core using kernel replacement and flow capabilities; `makeWorldMechanicsStage` and `makeWorldMechanicsPreview` provide explicit fixed-tick composition, while the caller owns state persistence, chunk boundaries, block-state variants, and movement-solver integration. |
+| Sparse-world redstone source, wire, device, and lamp transitions | this kit / mc-kernel | `updateRedstone` provides bounded immutable source, wire, pressure-plate, repeater, comparator, observer, and lamp transitions over a sparse world; `makeWorldMechanicsStage` and `makeWorldMechanicsPreview` provide explicit fixed-tick composition, while the caller owns orientation-specific block states, exact official tick semantics, and chunk/world synchronization. |
+| Sparse-world emitted-light source queries and bounded propagation | this kit / mc-kernel | Project the kernel's published lightEmission property into immutable full-cell source records and provide bounded six-neighbour attenuation through transparent cells; sky light, full chunk light grids, and scheduled world-wide updates remain outside this local slice, while mc-worldgen provides the propagated chunk light grid. |
+| Sparse-world explosion composition | this kit | Supply the caller's blast profile to mc-sim and apply only planned destroyed positions; leave entity effects to the caller. |
+| Furnace state transitions, recipes, fuels, and output rules | mc-sim | Delegate transfer, advancement, and collection directly to the published pure transitions. |
+| Furnace/inventory composition | this kit | Return one immutable transition state without copying smelting rules. |
+| Crop definitions, support, growth, bone-meal, and yield rules | mc-sim | Delegate the published crop predicates and pure transitions directly. |
+| Crop/world/inventory composition | this kit | Apply kernel block identities and support facts at the active sparse-world boundary; consume seeds or bone meal and return immutable harvest transitions. |
+| Wither structure matching and state transitions | mc-sim | Delegate structure matching, charging, movement, armour, damage, death, and descriptors directly; callers use the published skull projectile and serialization APIs. |
+| Wither/world composition | this kit | Match the active sparse world through mc-sim, consume the seven summon cells immutably, and return explosion/death descriptors without duplicating Wither rules. |
+| Finite-height sparse chunk world boundary | this kit | Own immutable chunk-map transitions, y-boundary checks, empty-chunk pruning, decoded-chunk loading, and an optional point reader; do not generate, stream, or persist worlds. |
+| Chunk coordinate conversion, registry validation, and binary codec | mc-kernel | Consume the kernel's coordinate and codec APIs; do not duplicate the chunk format. |
+| Chunk generation and generated dimensions | mc-worldgen / this kit | mc-worldgen owns generation, generated dimensions, and their lifecycle; this kit exposes that published surface under the root `worldgen` namespace and does not duplicate it. |
+| Input service and world renderer | mc-render | Receive attach/draw/detach implementations; do not duplicate DOM, WebGL, or bindings. |
+| Preview defaults and boot decisions | this kit | Keep pure and testable. |
+| Relaunch, interruption, cleanup, browser surface | this kit | Own generation lifetime and integration order. |
+| Official gameplay mechanics not present upstream | the relevant game package | Add the mechanic at its domain owner, then expose it through a module/service. |
 
-## 3. 非スコープ（明示的に持たない）
+## Why local ports remain
 
-**この節が本文書の主目的である。** kit は「便利なものを置く場所」に見えるので、
-放っておくと何でも入る。しかも入ったものは**出荷ビルドに存在しない**ので、
-入った瞬間に「プレビューでは動くがゲームでは動かない」が生まれる。
+The ports are not adapters around a duplicated implementation. They are narrow
+application contracts that make the lifecycle testable in Node:
 
-| 持たないもの | 正しい置き場 | 根拠 |
-| --- | --- | --- |
-| **実行時入力サービス（キーボード/マウス/ポインタロック/タッチ/リマッピング）** | **mc-render** | plan.md §2.3-2 / §7。§3.1 で詳述 |
-| **ゲームルール全般**（採掘・設置・Mob AI・ドロップ・流体・天候…） | mx-gameplay | plan.md §2.3-1、§3.11 |
-| **レッドストーン電力伝播** | mx-redstone | plan.md §3.12 |
-| **stage の全順序表** | **mc-compose** | plan.md §2.3-3。§3.2 で詳述 |
-| **Layer の最終合成** | mc-compose | plan.md §3.15。§3.3 で詳述 |
-| **セッションライフサイクル（タイトル⇄ゲーム）** | mc-compose | plan.md §3.15 |
-| **`CameraPoseSnapshot` の生成・書き換え** | mc-sim（正） / mc-render（ミラー） | plan.md §5.1-2。§3.4 で詳述 |
-| **deltaTime のクランプ・フレームペーシング** | mc-sim | plan.md §3.8。§3.5 で詳述 |
-| **地形生成・バイオーム分類・カーバー・構造物** | mc-worldgen | plan.md §3.7 |
-| **物理積分・AABB 衝突解決・voxel-DDA** | mc-physics（kit からは**推移依存で import 禁止**） | plan.md §3.4 / §2.3-5 |
-| **メッシュ生成** | mc-meshing（同上） | plan.md §3.3 |
-| **ノイズ関数** | mc-noise（同上） | plan.md §3.2 |
-| **セーブフォーマット・永続化** | mc-save（同上） | plan.md §3.5 |
-| **サウンド再生・字幕発行** | mc-audio（kit からは到達すらしない） | plan.md §3.6 |
-| **DOM UI 全般** | mx-ui | plan.md §3.13。mx-ui は kit を必要としない（DOM のみで起動する） |
-| **QA/デバッグAPI・Modding 入口・全体 E2E** | mc-compose | plan.md §3.15 |
+- the world port expresses “open this preview world” rather than generation or
+  streaming policy;
+- the simulation port exposes the small operation needed by a preview;
+- the renderer port makes pose mirroring explicit;
+- the input port owns only listener lifetime.
 
-### 3.1 実行時入力サービス — 最重要の非スコープ
+ChunkWorld provides a pure local value boundary for finite sparse storage,
+including a configurable vertical origin; it is not a port adapter and does not
+replace a generated world provider. Its blockReaderOfChunkWorld view is a direct
+point-query function for APIs that do not need enumeration; it does not broaden
+ChunkWorld into generation, streaming, persistence, or multi-dimension
+ownership. Its chunk codec boundary does not persist the vertical origin, so the
+dimension configuration remains caller-owned.
 
-「ミニ平地ワールド + カメラ + レンダラ + **入力**を1秒で起動する糊」と plan.md §3.10 は書く。
-入力は起動対象に**含まれる**。しかし入力の**実装**は含まれない。
+Concrete mc-render APIs are broader and lower-level; their composition belongs
+to the application that owns the real runtime. The portable mc-worldgen APIs
+are intentionally exposed directly under the root `worldgen` namespace, while
+the preview ports still leave generated-world composition to the application.
+The preview does not need to instantiate those systems for its deterministic
+lifecycle tests to remain focused.
 
-plan.md §2.3-2 が理由を 1 行で書いている:
+## Upstream usage
 
-> kit は devDependency 専用のため、kit に入力を置くと本番ゲームから入力が消える。
+The kit directly uses mc-kernel brands, block capabilities, drop rules, the
+`collisionShape`, `contactDamage`, `fluid`, `lightEmission`,
+`replaceable`, `brokenByWaterFlow`, and `xpOnBreak` block properties,
+mc-sim's immutable inventory, crafting/container transitions, block-targeting,
+projectile raycast, explosion/TNT planning, furnace, crop, and Wither transitions,
+entity manager, service layers, and GameLoopApi. Anvil payload and repair
+transitions remain direct mc-kernel capabilities because PlayerStorage does not
+represent enchantments, custom names, repair costs, or experience levels.
+The published mc-render package remains available to callers that implement
+the rendering ports. The published mc-worldgen package is a direct root
+dependency and is exposed without a compatibility adapter through `worldgen`.
+`resolveOptionsForBlockSource` supplies the local block callback adapter
+consumed by mc-sim's physics stages; the solver remains upstream.
 
-kit は出荷ビルドに入らない。入力サービスがここにあれば、リリースされたゲームは
-起動し、描画し、**何にも反応しない**。バグではなく、機能が丸ごと存在しない。
+GameplayServicesLayer supplies the standard mc-sim state layers, while
+gameplayServicesLayerWithEntities adds the generic upstream entity manager for
+a caller-provided behavior type. PreviewModule still accepts frame stages only,
+and the caller resolves the remaining full GameModule graph so the same
+host-specific composition can be used by a shipped runtime and a preview.
 
-したがって本リポジトリにあるのは `application/preview-ports.ts` の
+## Completeness gaps
 
-```typescript
-export type PreviewInputService = {
-  readonly attach: Effect.Effect<void>
-  readonly detach: Effect.Effect<void>
-}
+The following are not hidden obligations of this repository:
 
-export class InputPort extends Context.Tag('@nerima-games/mc-playground-kit/InputPort')<
-  InputPort, PreviewInputService
->() {}
-```
+- complete block/item registry beyond the kernel facts used here and remaining
+  crafting/gameplay rules beyond the targeting, inventory, crafting/container,
+  projectile, block, explosion, furnace, crop, and Wither slices;
+- authoritative explosion resistance and destructibility data are not present
+  in the kernel; this kit requires an explicit caller-owned profile and does not
+  derive it from unrelated block hardness values;
+- generated terrain/chunk-store composition is not part of the preview
+  lifecycle, so terrain generation parity, chunk streaming, and multi-dimension
+  world ownership remain outside this kit's local orchestration;
+- the preview lifecycle's implicit installation of the optional world-mechanics
+  stage and its composition of collision resolution/physics, sky light and
+  full-world lighting, orientation-specific redstone block states, remaining
+  entity-specific behavior, mobs, and AI;
+- renderer feature parity and input bindings;
+- persistence, networking, commands, and server behavior;
+- resource packs, sounds, particles, and UI.
 
-だけである。**Tag があって実装が無い。** この不在が設計であり、
-型システムが構造的に守っている: `InputPort` を満たすには、この規則が禁じている実装を
-このリポジトリに書くしかない。書けば `check:deps` 以前に自明に規則違反だと分かる。
-
-`attach` / `detach` の 2 メソッドしかないことも意図的である。ハーネスと入力の関係は
-「プレビューの間だけ有効にする」に尽きる。キーマッピングもポインタロックも
-タッチもゲームパッドも mc-render のものであり、ハーネスはそれらの語彙を知らない。
-
-ヘッドレスで入力を**模擬**したいときも同じで、参照実装の仮想入力パス
-（`packages/presentation/input/input-service.ts:305-318` の `setVirtualKey` /
-`pulseVirtualKey` / `addVirtualLookDelta` / `setVirtualLookActive`）は mc-render の surface である。
-これがなぜ死活的かは [porting.md](./porting.md) §3。
-
-### 3.2 stage の全順序
-
-[architecture.md](./architecture.md) §4.3 に全文。要約すると:
-
-- kit は呼び出し側が並べた**宣言順**で stage を回す
-- `after` は**検査**にだけ使い、順序の**導出**には使わない
-- 矛盾があれば警告して起動する（拒否しない）
-
-「検査は安全だが解決は危険」。解決器が 2 つあると、プレビューと出荷ゲームが食い違いうる。
-
-### 3.3 Layer の合成
-
-plan.md §4.1 の `GameModule<ROut, E, RIn>` は `layers` と `frameStages` の 2 つを持つ。
-**kit は後者しか受け取らない**（`domain/launch-options.ts` の `PreviewModule`）。
-
-理由は 2 つあり、どちらか片方だけでも十分である。
-
-1. **アーキテクチャ上の理由。** Layer マージは mc-compose の仕事（plan.md §2.3-3）。
-   ハーネスがマージすると、compose の唯一の仕事が二重実装になる。
-2. **型システム上の理由。** `ReadonlyArray<GameModule<ROut, E, RIn>>` は異種リストを表現できない。
-   異なるサービスを提供する 2 つのモジュールは `ROut` が違い、TypeScript にはそれを
-   量化して隠す存在型がない。compose はモジュール一覧を静的に知っているので解けるが、
-   実行時にモジュールを受け取るハーネスには解けない。
-
-プレビューのサービスは、呼び出し側が `launchPlayground` に Layer を provide する
-通常の Effect のやり方で入る。
-
-### 3.4 カメラ姿勢
-
-plan.md §5.1-2「カメラ姿勢は sim 所有」。mc-sim が正を持ち、mc-render がミラーする。
-
-**kit はその間に立つ。だから最も危険な位置にいる。**
-
-`renderFrame(dt, pose)` のように姿勢を引数で渡す設計にしてあるのは、
-ミラーの向きが**シグネチャに現れる**ようにするためである。レンダラが姿勢を返す引数位置は無い。
-`SimulationPort.cameraPose` は `Effect<CameraPoseSnapshot>` の読み取りのみで、setter は無い。
-
-参照実装がこの逆転構造で払った代償は mc-sim の `docs/design-notes.md` DN-01 に全 13 箇所が
-記録されている。ハーネスに `setCameraPose` を 1 つ足すだけで、その構造が戻る。
-
-### 3.5 deltaTime のクランプ
-
-`PlaygroundHandle.submitFrame` は **タイムスタンプではなく delta を受け取る**。
-
-`min(max(0.001, raw), 0.05)` のクランプは mc-sim が所有する（plan.md §3.8、
-`mc-sim/domain/frame-timing.ts`）。ここに 2 つ目の実装を置くと同期対象が増え、
-食い違ったときの症状は「プレビューをバックグラウンドにして戻したらプレイヤーが床を抜けた」
-になり、**物理のバグに見える**。
-
-プレビューのフレーム駆動側（ブラウザなら `requestAnimationFrame`、テストならループ）が
-mc-sim の関数で 1 回クランプし、その結果を渡す。
-
-### 3.6 判断手順
-
-新しいコードを kit に置くか迷ったら、順に問う。
-
-1. **これを消したら、出荷ゲームの挙動が変わるか** → 変わるなら kit ではない
-   （kit は出荷されないので、変わりようがない。変わるなら置き場所を間違えている）
-2. **これは「順番」「時間」「後始末」のどれかか** → どれでもないなら kit ではない
-3. **親リポジトリの誰かが、これを所有すべきではないか** → 所有者がいるなら Port にする
-4. **これは 2 つ以上のリポジトリのプレビューが必要とするか** → 1 つだけなら、そのリポジトリの
-   `apps/preview-*/` に置けないか再検討する
-
-## 4. 親と子
-
-### 親（kit が依存する）— 4 リポジトリ
-
-| リポジトリ | 使うもの | 現状 |
-| --- | --- | --- |
-| `mc-kernel` | 語彙全般（`DeltaTimeSecs`、`StageId`、`Position`、`CameraPoseSnapshot`、Clock Port、`GameModule`） | 公開 package から直接 import |
-| `mc-worldgen` | ミニ平地ワールドの生成・破棄 | `WorldProviderPort` |
-| `mc-sim` | スポーン / tick / 姿勢の読み取り / 停止 | `SimulationPort` |
-| `mc-render` | 描画（`RendererPort`）**と実行時入力**（`InputPort`） | 2 つの Port |
-
-`mc-render` だけが 2 つの Port に分かれているのは、責務がはっきり別だからであり、
-かつ入力の所有権（§3.1）を surface の形で可視化するためである。
-
-### 子（kit に依存する）— **実行時はゼロ**
-
-| リポジトリ | 依存の種類（意図された最終形） | 何を使うか | kit 側で壊してはいけないもの |
-| --- | --- | --- | --- |
-| `mx-gameplay` | **devDependency のみ** | プレビュー 3 本の起動 | `launchPlayground()` が無引数で完結すること |
-| `mx-redstone` | **devDependency のみ** | 回路盤プレビューの起動 | 同上 + `modules` による stage 注入 |
-| `mc-worldgen` / `mc-sim` / `mc-render` の `apps/preview-*/` | **devDependency のみ** | 各内蔵プレビューの起動 | `launch` の再入可能性 |
-
-> **現状**: この表は**意図された最終形**である。
-> **今日この kit を依存に持つリポジトリは 1 つも無い**（どの `package.json` にも
-> `@nerima-games/*` の宣言は無く、`apps/preview-*/` もまだどこにも存在しない）。
-> publish が始まっていないためで、plan.md §6 Step 3 の bottom-up publish-then-pin に沿う。
-> 「kit 側で壊してはいけないもの」の列は、その日が来る前に守るべき制約として今日から効く。
-
-**この表に「実行時依存」の行が 1 つもないこと自体が、本リポジトリの最重要の不変条件である。**
-`test/check-dependency-whitelist.test.ts` の
-`this repository sits at the TOP of the runtime graph: nothing depends on it` が
-依存グラフ 16 行を走査してこれを assert している。
+Each item needs a concrete owner and acceptance tests before it can be called
+implemented. The playground can host those modules once they exist; it cannot
+make an absent upstream mechanic complete by adding an orchestration adapter.
