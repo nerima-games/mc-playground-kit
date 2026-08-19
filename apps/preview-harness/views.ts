@@ -78,7 +78,7 @@ export const bootView = (view: HarnessView, style: Style, width: number): Readon
   )
 
   const lines: Array<string> = [
-    heading(style, 'boot  (plan.md §3.10: "starts in about a second, reliably")', width),
+    heading(style, 'boot  (target: "starts in about a second, reliably")', width),
     row(
       style,
       'launches',
@@ -241,7 +241,7 @@ export const ledgerView = (view: HarnessView, style: Style, width: number): Read
             style,
             '',
             style.paint(
-              'The four port teardowns belong INSIDE the identity guard in application/playground.ts.',
+              'The four port teardowns belong INSIDE the identity guard in application/playground-service.ts.',
               BAD,
             ),
           ),
@@ -274,7 +274,7 @@ export const stagesView = (view: HarnessView, style: Style, width: number): Read
     row(
       style,
       'will not',
-      style.dim('resolve a total order. mc-compose owns that; a preview that reordered stages would stop previewing the game'),
+      style.dim('resolve a total order. The application composition root owns that; a preview that reordered stages would stop previewing the game'),
     ),
     row(
       style,

@@ -11,8 +11,7 @@
  *
  * Note what is NOT here, and what is not anywhere in this app: a clock read.
  * `Date.now()` / `new Date()` / `performance.now()` do not appear, and the
- * `mc-kernel-allow-time-source` escape hatch in
- * `scripts/check-dependency-whitelist.ts` is not used — which matters more here
+ * `mc-kernel-allow-time-source` escape hatch is not used — which matters more here
  * than anywhere else in the organisation, because this app's subject is a BOOT
  * BUDGET measured in milliseconds. Every millisecond it reports comes from a
  * `ClockPort` the operator programmed, so "the world phase took 400 ms" is a

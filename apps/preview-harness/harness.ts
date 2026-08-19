@@ -48,7 +48,6 @@ import type { PreviewModule, StageOrderViolation } from '../../src/domain/launch
 // this package's barrel. This harness uses the same public contract as consumers.
 import {
   ClockPort,
-  DeltaTimeSecs,
   EpochMillis,
   MonotonicTimeSecs,
   position,
@@ -372,8 +371,10 @@ export const makeHarness = async (config: HarnessConfig): Promise<Harness> => {
               note('submitFrame with no live handle — nothing to submit to')
             })
           : Effect.forEach(
-              Array.from({ length: command.count }, () => DeltaTimeSecs(0.016)),
-              (dt) => (liveHandle as PlaygroundHandle).submitFrame(dt),
+              Array.from({ length: command.count }, (_, index) =>
+                MonotonicTimeSecs((framesSubmitted + index + 1) * 0.016),
+              ),
+              (at) => (liveHandle as PlaygroundHandle).submitFrame(at),
               { discard: true },
             ).pipe(
               Effect.zipRight(Effect.yieldNow()),

@@ -23,8 +23,8 @@
  * and cannot be written today. See `apps/preview-harness/README.md` for exactly
  * what is missing.
  *
- * The launch-and-operate half needs none of them, and it is the half plan.md
- * §3.10 says matters most: kit is 「最も丁寧に作る」 because every other
+ * The launch-and-operate half needs none of them, and it is the half this
+ * package measures most carefully: kit is 「最も丁寧に作る」 because every other
  * repository's preview startup rides on it, and the property that has to hold is
  * **starts in about a second, reliably**. That is measurable right now, against
  * fake ports whose cost the operator programs — and measuring it against a
@@ -53,7 +53,7 @@ export type Command =
   /**
    * Stop through a handle captured before the last relaunch.
    *
-   * `application/playground.ts:397-402` guards the two shared `Ref` slots
+   * `application/playground-service.ts` guards the two shared `Ref` slots
    * against exactly this, with the comment "a late stop() on the old handle must
    * not unregister the new preview". The four port teardowns at :389-393 are not
    * guarded, and this is the step that shows what that costs.
@@ -149,7 +149,8 @@ const STAGE_CONTRADICTION: Scenario = {
     'The module declares `preview:draw` before `preview:camera`, and declares',
     'that `preview:draw` runs after `preview:camera`. Both cannot be what the',
     'author meant. The harness reports it, logs a warning, and runs the stages in',
-    'declaration order anyway — because mc-compose owns the total order and a',
+    'declaration order anyway — because the application composition root owns',
+    'the total order and a',
     'preview that quietly reordered them would be a preview that no longer',
     'previews the game.',
   ],
@@ -163,7 +164,7 @@ const STAGE_CONTRADICTION: Scenario = {
 }
 
 /**
- * The second world load — plan.md §3.8's worst bug class, in the repository
+ * The second world load — the lifecycle's worst bug class, in the repository
  * whose entire job is relaunching.
  */
 const RELAUNCH: Scenario = {
@@ -191,7 +192,7 @@ const RELAUNCH: Scenario = {
 /**
  * The regression this scenario watches.
  *
- * `application/playground.ts` guards the shared `Ref` slots against a late
+ * `application/playground-service.ts` guards the shared `Ref` slots against a late
  * `stop()` on a superseded handle. The four port teardowns used to sit OUTSIDE
  * that guard, and the ports are the SAME objects the live preview is using —
  * they come from one Layer. They are inside it now; this scenario is what
@@ -227,7 +228,7 @@ const STALE_STOP: Scenario = {
 /**
  * A teardown step that fails.
  *
- * `playground.ts:391` wraps each port teardown in `catchAllCause` so that one
+ * `playground-service.ts` wraps each port teardown in `catchAllCause` so that one
  * failure cannot abandon the rest — the reference's timed-out quit step is what
  * made re-entrancy necessary in the first place. docs/testing.md lists this as
  * an unwritten test.

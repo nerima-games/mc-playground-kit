@@ -1,8 +1,8 @@
 /**
  * `apps/preview-harness` — mc-playground-kit's built-in preview.
  *
- * plan.md §2.3-4 requires a preview to live with the thing it verifies, and
- * plan.md §4.1 puts it under `apps/preview-<name>/`: a dev application INSIDE
+ * A preview lives with the thing it verifies, under `apps/preview-<name>/`: a
+ * dev application INSIDE
  * this repository, not a package, not part of `index.ts`, and not something a
  * consumer can import.
  *
@@ -20,16 +20,16 @@
  *      `Context.Tag`s and their service types, with deliberately no
  *      `Layer.succeed` anywhere — a fake shipped from the package would be a
  *      fake every consumer could build a preview on. Real ones need
- *      mc-worldgen, mc-sim and mc-render published and pinned (plan.md §6
- *      Step 3), and nothing is published.
+ *      mc-worldgen, mc-sim and mc-render published and pinned. The current
+ *      harness still uses explicit fakes for the port implementations.
  *   2. A screenshot is of pixels, and mc-render ships no THREE.js and no
  *      `lib.DOM`.
  *   3. `@playwright/test` is a dependency of no repository in the organisation.
  *   4. A screenshot test needs an agreed answer to "what counts as the same
- *      picture", and plan.md §3.10 records that Playwright runs on SwiftShader,
+ *      picture", and browser runs may use SwiftShader,
  *      so the baselines cannot come from a developer machine.
  *
- * None of that blocks the property plan.md §3.10 says matters most. kit is
+ * None of that blocks the property this package measures most. kit is
  * 「最も丁寧に作る」 because every other repository's preview startup rides on
  * it, and what has to hold is **starts in about a second, reliably**. That is
  * measurable right now — and measurable BECAUSE the ports are injected. This app
@@ -45,8 +45,7 @@
  * Constraints this app is written under
  * ---------------------------------------------------------------------------
  *
- *  - `apps` is in `SCAN_ROOTS` (scripts/check-dependency-whitelist.ts), so the
- *    preview's imports are gated like any other source here. It imports this
+ *  - The preview's imports are linted like any other source here. It imports this
  *    repository's own modules and `effect`, which is already a declared
  *    dependency. No org package, no new npm dependency.
  *  - The `Date.now()` / `new Date()` / `performance.now()` ban applies, and this

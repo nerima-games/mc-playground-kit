@@ -34,7 +34,6 @@ import {
 } from '../../src/domain/launch-options'
 import {
   ClockPort,
-  DeltaTimeSecs,
   EpochMillis,
   MonotonicTimeSecs,
   position,
@@ -106,7 +105,7 @@ const staleStopProbe = Effect.gen(function* () {
     const current = yield* playground.current
 
     yield* Ref.set(fakes.events, [])
-    yield* live.submitFrame(DeltaTimeSecs(0.016))
+    yield* live.submitFrame(MonotonicTimeSecs(0.016))
     yield* Effect.yieldNow()
     yield* Effect.yieldNow()
     const afterFrame = yield* Ref.get(fakes.events)
@@ -128,7 +127,7 @@ const staleStopProbe = Effect.gen(function* () {
     `   ${cell('live.framesRendered after one more frame', 46)}${String(result.framesRendered)}`,
     `   ${cell('what that frame did to the ports', 46)}${result.afterFrame.join(', ') || '(none)'}`,
     '',
-    '   The first row is the one to read. `services` (playground.ts:312-318) is resolved from the',
+    '   The first row is the one to read. `services` (playground-service.ts) is resolved from the',
     '   caller\'s Layer, so a superseded handle holds the SAME four objects the live preview is',
     '   using — and the four port teardowns used to run unconditionally, two lines above the guard',
     '   that already protected `generationRef` and `handleRef`. The live preview\'s input listeners',
@@ -227,7 +226,7 @@ const doubleRegistrationProbe = Effect.gen(function* () {
     '   flattens the modules itself. Two consequences, and the second was the one that bit:',
     '',
     '   1. The `modules` phase under-reported. Half the module registration cost fell outside',
-    '      phase(), contradicting playground.ts:322 — "Every phase in BOOT_PHASE_ORDER goes',
+    '      phase(), contradicting playground-boot.ts — "Every phase in BOOT_PHASE_ORDER goes',
     '      through here" — in the one repository whose product is a boot budget.',
     '',
     '   2. `stageOrderWarnings` described stages the pump would never run. A module whose',
@@ -383,12 +382,13 @@ const FOOTER: ReadonlyArray<string> = [
   '     1. REAL PORT LAYERS. application/preview-ports.ts is four Context.Tags and their service',
   '        types, with deliberately no Layer.succeed anywhere — its header explains why a shipped',
   '        fake would be worse than none. Real ones need mc-worldgen, mc-sim and mc-render to be',
-  '        published and pinned (plan.md §6 Step 3), and nothing is published.',
+  '        published and pinned. The current kit intentionally leaves those real',
+  '        port implementations to the application composition root.',
   '     2. A BROWSER. A screenshot is of pixels; mc-render ships no THREE.js and no lib.DOM.',
   '     3. @playwright/test. Not a dependency of any repository in the organisation, and adding',
   '        it is a decision about CI runtime, not a line in a package.json.',
   '     4. A BASELINE POLICY. A screenshot test without an agreed answer to "what counts as the',
-  '        same picture" is a test that fails on a font update. plan.md §3.10 records that',
+  '        same picture" is a test that fails on a font update. Browser runs may use',
   '        Playwright runs on SwiftShader, so the baselines cannot come from a developer machine.',
   '',
   '   None of that blocks the property §3.10 says matters most — "starts in about a second,',
