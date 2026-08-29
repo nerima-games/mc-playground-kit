@@ -1,0 +1,98 @@
+import {
+  CHUNK_HEIGHT,
+  type ChunkStoreApi,
+  type Chunk as GeneratedChunk,
+  type ChunkCoord as GeneratedChunkCoord,
+} from '@nerima-games/mc-worldgen'
+import {
+  type ChunkWorld,
+  emptyChunkWorld,
+  storeChunkInChunkWorld,
+} from '../domain/chunk-world.js'
+import { Data, Effect } from 'effect'
+import { type Chunk as KernelChunk, chunkCoord, chunk as kernelChunk } from '@nerima-games/mc-kernel'
+
+export type WorldRuntimeSnapshotReason =
+  | 'chunk-unloaded-during-snapshot'
+  | 'loaded-set-changed'
+  | 'invalid-chunk'
+
+// oxlint-disable-next-line new-cap -- Effect exposes TaggedError as a factory with a constructor-shaped name.
+export class WorldRuntimeSnapshotError extends Data.TaggedError('WorldRuntimeSnapshotError')<{
+  readonly reason: WorldRuntimeSnapshotReason
+  readonly cx?: number
+  readonly cz?: number
+}> {}
+
+const coordKeyOf = (coord: { readonly cx: number; readonly cz: number }): string =>
+  `${String(coord.cx)},${String(coord.cz)}`
+
+const sameLoadedCoords = (
+  left: ReadonlyArray<GeneratedChunkCoord>,
+  right: ReadonlyArray<GeneratedChunkCoord>,
+): boolean => {
+  if (left.length !== right.length) {
+    return false
+  }
+
+  const leftKeys = new Set(left.map(coordKeyOf))
+  return right.every((coord) => leftKeys.has(coordKeyOf(coord)))
+}
+
+const kernelChunkOf = (value: GeneratedChunk): KernelChunk =>
+  kernelChunk(
+    chunkCoord(value.coord.cx, value.coord.cz),
+    CHUNK_HEIGHT,
+    Uint8Array.from(value.blocks),
+  )
+
+export const snapshotChunk = (
+  store: ChunkStoreApi,
+  coord: GeneratedChunkCoord,
+): Effect.Effect<KernelChunk, WorldRuntimeSnapshotError> =>
+  Effect.flatMap(store.snapshot(coord), (value) => {
+    if (!value) {
+      return Effect.fail(
+        new WorldRuntimeSnapshotError({
+          cx: coord.cx,
+          cz: coord.cz,
+          reason: 'chunk-unloaded-during-snapshot',
+        }),
+      )
+    }
+
+    try {
+      return Effect.succeed(kernelChunkOf(value))
+    } catch {
+      return Effect.fail(
+        new WorldRuntimeSnapshotError({
+          cx: coord.cx,
+          cz: coord.cz,
+          reason: 'invalid-chunk',
+        }),
+      )
+    }
+  })
+
+export const snapshotWorldRuntime = (
+  store: ChunkStoreApi,
+): Effect.Effect<ChunkWorld, WorldRuntimeSnapshotError> =>
+  Effect.gen(function* snapshotWorldRuntimeGen() {
+    const loadedCoords = yield* store.loadedCoords
+    const chunks = yield* Effect.forEach(loadedCoords, (coord) => snapshotChunk(store, coord))
+    const currentLoadedCoords = yield* store.loadedCoords
+
+    if (!sameLoadedCoords(loadedCoords, currentLoadedCoords)) {
+      return yield* Effect.fail(
+        new WorldRuntimeSnapshotError({ reason: 'loaded-set-changed' }),
+      )
+    }
+
+    let world = emptyChunkWorld(CHUNK_HEIGHT)
+    for (const value of chunks) {
+      const { world: nextWorld } = storeChunkInChunkWorld(world, value)
+      world = nextWorld
+    }
+
+    return world
+  })

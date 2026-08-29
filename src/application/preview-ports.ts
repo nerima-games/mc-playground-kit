@@ -52,12 +52,22 @@
  * standing two previews side by side in one process actually needs.
  */
 import type { CameraPoseSnapshot, DeltaTimeSecs } from '@nerima-games/mc-kernel'
-import { Context, Effect } from 'effect'
+import { Context, Data, Effect } from 'effect'
 import type { FlatWorldSpec, SpawnKit } from '../domain/launch-options.js'
+import type { ChunkPersistenceError } from '@nerima-games/mc-worldgen'
 
 // ---------------------------------------------------------------------------
 // Ports for mc-worldgen
 // ---------------------------------------------------------------------------
+
+// oxlint-disable-next-line new-cap -- Effect exposes TaggedError as a factory with a constructor-shaped name.
+export class InvalidWorldSpecError extends Data.TaggedError('InvalidWorldSpecError')<{
+  readonly field: 'worldId' | 'seed' | 'generation' | 'surfaceY' | 'radiusChunks'
+  readonly value: unknown
+  readonly message: string
+}> {}
+
+export type WorldProviderError = InvalidWorldSpecError | ChunkPersistenceError
 
 /**
  * The slice of mc-worldgen a playground uses: make a small flat plate exist,
@@ -69,9 +79,9 @@ import type { FlatWorldSpec, SpawnKit } from '../domain/launch-options.js'
  */
 export type WorldProviderService = {
   /** Generate and load the plate described by `spec`. Idempotent per world id. */
-  readonly openFlatWorld: (spec: FlatWorldSpec) => Effect.Effect<void>
+  readonly openFlatWorld: (spec: FlatWorldSpec) => Effect.Effect<void, WorldProviderError>
   /** Unload it. Must be safe to call on a world that was never opened. */
-  readonly closeWorld: Effect.Effect<void>
+  readonly closeWorld: Effect.Effect<void, WorldProviderError>
 }
 
 export class WorldProviderPort extends Context.Tag('@nerima-games/mc-playground-kit/WorldProviderPort')<

@@ -19,6 +19,7 @@ import {
   makeWorldMechanicsStage,
   makeWorldMechanicsPreview,
   setBlockAt,
+  type WorldMechanicsState,
   worldMechanicsStateFromWorld,
 } from '../src/domain/block-interaction'
 
@@ -123,8 +124,12 @@ describe('world mechanics stage', () => {
       )
       const current = worldMechanicsStateFromWorld(world)
       const state = yield* Ref.make(current)
+      let observed: WorldMechanicsState | undefined = undefined
       const stage = makeWorldMechanicsStage(state, {
         id: StageId('world:mechanics:fixed'),
+        onStateChange: (next) => {
+          observed = next
+        },
         tickIntervalSecs: 1,
       })
       const clock = {
@@ -143,6 +148,7 @@ describe('world mechanics stage', () => {
       const afterOneTick = yield* Ref.get(state)
       const expectedAfterOneTick = advanceWorldMechanics(current).state
       expect(afterOneTick).toEqual(expectedAfterOneTick)
+      expect(observed).toBe(afterOneTick)
 
       yield* stage.run(DeltaTimeSecs(2)).pipe(
         Effect.provideService(ClockPort, clock),

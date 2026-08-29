@@ -1,26 +1,29 @@
 import {
   AIR_BLOCK_ID,
-  type BlockId,
+  BlockId,
   type BlockPosition,
+  type BlockPositionKey,
   CHUNK_SIZE_XZ,
   type Chunk,
   type ChunkCoord,
+  type ChunkKey,
   type LocalBlockCoord,
+  MAX_CHUNK_HEIGHT,
+  blockPosition,
+  blockPositionKeyOf,
   chunk,
   chunkCoordOfBlock,
+  chunkKeyOf,
   decodeChunk,
   encodeChunk,
   isKnownBlockId,
   localCoordOfBlock,
 } from '@nerima-games/mc-kernel'
-import { type BlockReader } from './block-world.js'
-import { Brand } from 'effect'
+import { type BlockReader, type BlockWorld } from './block-world.js'
 
 const MIN_CHUNK_HEIGHT = 1
-const MAX_CHUNK_HEIGHT = 0xffff
 const DEFAULT_WORLD_MIN_Y = 0
-
-export type ChunkCoordKey = string & Brand.Brand<'ChunkCoordKey'>
+const UNIT_STEP = 1
 
 export type ChunkSnapshot = {
   readonly coord: ChunkCoord
@@ -31,7 +34,7 @@ export type ChunkSnapshot = {
 export type ChunkWorld = {
   readonly height: number
   readonly minY: number
-  readonly chunks: ReadonlyMap<ChunkCoordKey, ChunkSnapshot>
+  readonly chunks: ReadonlyMap<ChunkKey, ChunkSnapshot>
 }
 
 export type ChunkWorldBlockWriteResult =
@@ -133,15 +136,12 @@ const kernelChunkOf = (value: ChunkSnapshot): Chunk =>
 
 const worldWithChunks = (
   world: ChunkWorld,
-  chunks: ReadonlyMap<ChunkCoordKey, ChunkSnapshot>,
+  chunks: ReadonlyMap<ChunkKey, ChunkSnapshot>,
 ): ChunkWorld => ({
   chunks,
   height: world.height,
   minY: world.minY,
 })
-
-export const chunkCoordKeyOf = (coord: ChunkCoord): ChunkCoordKey =>
-  `${coord.cx},${coord.cz}` as ChunkCoordKey
 
 export const emptyChunkWorld = (height: number, minY = DEFAULT_WORLD_MIN_Y): ChunkWorld => {
   assertWorldBounds(height, minY)
@@ -149,7 +149,7 @@ export const emptyChunkWorld = (height: number, minY = DEFAULT_WORLD_MIN_Y): Chu
 }
 
 export const chunkAt = (world: ChunkWorld, coord: ChunkCoord): ChunkSnapshot | undefined =>
-  world.chunks.get(chunkCoordKeyOf(coord))
+  world.chunks.get(chunkKeyOf(coord))
 
 export const blockAtChunkWorld = (world: ChunkWorld, position: BlockPosition): BlockId => {
   if (position.y < world.minY || position.y >= world.minY + world.height) {
@@ -170,15 +170,78 @@ export const blockAtChunkWorld = (world: ChunkWorld, position: BlockPosition): B
 export const blockReaderOfChunkWorld = (world: ChunkWorld): BlockReader =>
   (position) => blockAtChunkWorld(world, position)
 
+type BlockEntry = readonly [BlockPositionKey, BlockId]
+
+type BlockEntryAtOptions = {
+  readonly localX: number
+  readonly localY: number
+  readonly localZ: number
+  readonly stored: ChunkSnapshot
+  readonly world: ChunkWorld
+}
+
+const blockEntryAt = ({
+  localX,
+  localY,
+  localZ,
+  stored,
+  world,
+}: BlockEntryAtOptions): BlockEntry | null => {
+  const index = (localX * CHUNK_SIZE_XZ + localZ) * stored.height + localY
+  // oxlint-disable-next-line new-cap -- BlockId is the kernel's validated branded constructor.
+  const blockId = BlockId(stored.blocks[index]!)
+
+  if (blockId === AIR_BLOCK_ID) {
+    return null
+  }
+
+  const position = blockPosition(
+    stored.coord.cx * CHUNK_SIZE_XZ + localX,
+    world.minY + localY,
+    stored.coord.cz * CHUNK_SIZE_XZ + localZ,
+  )
+  return [blockPositionKeyOf(position), blockId]
+}
+
+const blockWorldOfChunk = (world: ChunkWorld, stored: ChunkSnapshot): BlockWorld => {
+  const blocks = new Map<BlockPositionKey, BlockId>()
+
+  for (let localX = 0; localX < CHUNK_SIZE_XZ; localX += UNIT_STEP) {
+    for (let localZ = 0; localZ < CHUNK_SIZE_XZ; localZ += UNIT_STEP) {
+      for (let localY = 0; localY < stored.height; localY += UNIT_STEP) {
+        const entry = blockEntryAt({ localX, localY, localZ, stored, world })
+        if (entry !== null) {
+          const [key, blockId] = entry
+          blocks.set(key, blockId)
+        }
+      }
+    }
+  }
+
+  return blocks
+}
+
+export const blockWorldOfChunkWorld = (world: ChunkWorld): BlockWorld => {
+  const blocks = new Map<BlockPositionKey, BlockId>()
+
+  for (const stored of world.chunks.values()) {
+    for (const [key, blockId] of blockWorldOfChunk(world, stored)) {
+      blocks.set(key, blockId)
+    }
+  }
+
+  return blocks
+}
+
 type ChunkLocation = {
   readonly coord: ChunkCoord
-  readonly key: ChunkCoordKey
+  readonly key: ChunkKey
   readonly local: LocalBlockCoord
 }
 
 const chunkLocationOf = (position: BlockPosition): ChunkLocation => {
   const coord = chunkCoordOfBlock(position)
-  return { coord, key: chunkCoordKeyOf(coord), local: localCoordOfBlock(position) }
+  return { coord, key: chunkKeyOf(coord), local: localCoordOfBlock(position) }
 }
 
 const mutableBlocksOf = (
@@ -216,7 +279,7 @@ const chunksAfterBlockWrite = ({
   location,
   stored,
   world,
-}: ChunkWrite): ReadonlyMap<ChunkCoordKey, ChunkSnapshot> => {
+}: ChunkWrite): ReadonlyMap<ChunkKey, ChunkSnapshot> => {
   const blocks = mutableBlocksOf(world, stored)
   blocks[blockIndexOf(world.height, world.minY, location.local)] = blockId
   const nextChunks = new Map(world.chunks)
@@ -264,9 +327,9 @@ export const writeBlockAtChunkWorld = (
   }
 }
 
-const worldWithoutChunk = (
+export const removeChunkFromChunkWorld = (
   world: ChunkWorld,
-  key: ChunkCoordKey,
+  key: ChunkKey,
 ): ChunkWorldChunkStoreResult => {
   const nextChunks = new Map(world.chunks)
 
@@ -292,10 +355,10 @@ export const storeChunkInChunkWorld = (
   }
 
   const stored = snapshotOf(value)
-  const key = chunkCoordKeyOf(stored.coord)
+  const key = chunkKeyOf(stored.coord)
 
   if (isEmptyChunk(stored.blocks)) {
-    return worldWithoutChunk(world, key)
+    return removeChunkFromChunkWorld(world, key)
   }
 
   const nextChunks = new Map(world.chunks)
