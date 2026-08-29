@@ -15,6 +15,7 @@ import {
   flattenedStageOrderViolations,
   normalizeLaunchOptions,
 } from '../domain/launch-options.js'
+import type { WorldProviderError } from './preview-ports.js'
 
 const runOneFrame = (
   services: BootServices,
@@ -30,7 +31,11 @@ const runOneFrame = (
     yield* services.renderer.renderFrame(dt, pose)
   }).pipe(Effect.catchAllCause((cause) => Effect.logError(`Playground frame error: ${Cause.pretty(cause)}`)))
 
-const timePhase = <A>(timer: BootPhaseTimer, name: BootPhase, work: Effect.Effect<A>): Effect.Effect<A> =>
+const timePhase = <A, E>(
+  timer: BootPhaseTimer,
+  name: BootPhase,
+  work: Effect.Effect<A, E>,
+): Effect.Effect<A, E> =>
   Effect.gen(function* timePhaseGen() {
     const startedAt = yield* timer.clock.monotonicSecs
     const result = yield* work
@@ -44,9 +49,9 @@ const timePhase = <A>(timer: BootPhaseTimer, name: BootPhase, work: Effect.Effec
 
 const bootInfrastructure = (
   services: BootServices,
-  phase: <A>(name: BootPhase, work: Effect.Effect<A>) => Effect.Effect<A>,
+  phase: <A, E>(name: BootPhase, work: Effect.Effect<A, E>) => Effect.Effect<A, E>,
   resolved: ResolvedLaunchOptions,
-): Effect.Effect<void> =>
+): Effect.Effect<void, WorldProviderError> =>
   Effect.gen(function* bootInfrastructureGen() {
     yield* phase('world', services.world.openFlatWorld(resolved.world))
     yield* phase('simulation', services.simulation.spawn(resolved.spawnKit))
@@ -54,10 +59,13 @@ const bootInfrastructure = (
     yield* phase('input', services.input.attach)
   })
 
-export const runBootSequence = (services: BootServices, options: LaunchOptions | undefined): Effect.Effect<BootOutcome> =>
+export const runBootSequence = (
+  services: BootServices,
+  options: LaunchOptions | undefined,
+): Effect.Effect<BootOutcome, WorldProviderError> =>
   Effect.gen(function* runBootSequenceGen() {
     const timingsRef = yield* Ref.make<ReadonlyArray<import('../domain/boot-phase.js').PhaseTiming>>([])
-    const phase = <A>(name: BootPhase, work: Effect.Effect<A>): Effect.Effect<A> =>
+    const phase = <A, E>(name: BootPhase, work: Effect.Effect<A, E>): Effect.Effect<A, E> =>
       timePhase({ clock: services.clock, timingsRef }, name, work)
     const resolved = yield* phase('resolve-options', Effect.sync(() => normalizeLaunchOptions(options)))
     yield* bootInfrastructure(services, phase, resolved)

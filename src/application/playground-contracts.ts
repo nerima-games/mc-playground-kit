@@ -17,6 +17,7 @@ import {
   type PreviewInputService,
   type RendererService,
   type SimulationService,
+  type WorldProviderError,
   type WorldProviderService,
 } from './preview-ports.js'
 import { type GameLoopApi } from '@nerima-games/mc-sim'
@@ -38,7 +39,7 @@ export type PlaygroundHandle = {
 export type PlaygroundApi = {
   readonly launch: (
     options?: LaunchOptions | undefined,
-  ) => Effect.Effect<PlaygroundHandle, never, ClockPort | PlaygroundPorts>
+  ) => Effect.Effect<PlaygroundHandle, WorldProviderError, ClockPort | PlaygroundPorts>
   readonly current: Effect.Effect<Option.Option<PlaygroundHandle>>
   readonly stop: Effect.Effect<void>
 }

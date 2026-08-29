@@ -45,19 +45,27 @@ The kit owns:
   mc-sim;
 - crop planting, growth, bone-meal, and harvest transitions backed by mc-sim
   crop rules and the mc-kernel block registry;
+- Nether portal frame detection and interior activation delegated to
+  mc-worldgen over the immutable sparse world boundary;
+- End portal frame-state matching and interior activation delegated to
+  mc-worldgen over the immutable sparse world boundary;
 - Wither structure summoning and immutable sparse-world consumption backed by
   mc-sim Wither state transitions;
 - a direct GameplayServicesLayer composition for the standard mc-sim state
   services, including its crafting and container transactions;
 - a typed gameplayServicesLayerWithEntities factory that composes mc-sim's
   generic entity roster lifecycle while leaving host behavior types to callers;
+- an explicit `GameplayPreview` composition that connects mc-sim's physics
+  stages to a sparse `BlockWorld` and appends the local fluid/redstone stage;
 - small injected ports for world, simulation, rendering, and input;
 - deterministic test doubles used by the terminal preview harness.
 
 The kit does not own:
 
-- chunk generation, streaming, authoritative persistence, rendering, pointer
-  lock, physics composition, or input mappings;
+- unbounded chunk streaming, authoritative full-world ownership, rendering,
+  pointer lock, or input mappings;
+- low-level terrain generation or storage formats; the opt-in generated-world
+  layers compose those responsibilities from mc-worldgen without copying them;
 - the authoritative full world or gameplay state; GameplayServicesLayer
   composes the upstream services but does not replace their ownership;
 - entity-specific behavior, damage, AI, or mob mechanics; the entity helper
@@ -67,16 +75,34 @@ The kit does not own:
   block-targeting, projectile-interaction, block-interaction (including the
   kernel-backed mining-experience handoff, fluid occupancy and state-aware
   volumes, local fluid transitions, and bounded redstone device transitions),
-  explosion-interaction,
+  explosion-interaction, nether-portal-interaction, end-portal-interaction,
   furnace-interaction, crop-interaction, and wither-interaction boundaries.
 
 Those responsibilities belong to the upstream packages or to the application
 composition root that supplies the ports.
 
 The root `physics`, `save`, and `worldgen` namespaces expose the published
-upstream APIs directly. The preview lifecycle does not instantiate those
-systems; an application can compose them with the injected world port when it
-owns a generated runtime and authoritative save state.
+upstream APIs directly. `GeneratedWorldProviderLayer` composes mc-worldgen's
+generated-dimension source and in-memory `ChunkStore`, while
+`PersistentGeneratedWorldProviderLayer` binds the same runtime to the
+injected `StoragePort`. Both layers validate the launch spec, preload a bounded
+radius, expose the raw upstream store through `WorldRuntimePort`, and unload it
+on close. They are explicit application composition; they do not claim
+unbounded streaming or authoritative full-world ownership, and the default
+preview lifecycle still does not install them implicitly.
+
+`makeGameplayPreview` is the explicit playable-preview composition. It uses
+mc-sim's physics stages with a collision source derived from the supplied
+`BlockWorld`, returns the upstream `SimInputPort`, and appends the local
+fluid/redstone stage. It does not install itself into `launchPlayground` or
+provide renderer, pointer-lock, or input-mapping behavior.
+
+`launchGeneratedPlayground` is the opt-in composition for the bounded generated
+runtime. It combines the provider, loaded-chunk snapshot, playable preview,
+and normal playground lifecycle, and returns a `persistWorld` operation for
+changed blocks. Use the generated provider layer and supply the remaining host
+services explicitly; streaming and authoritative world ownership remain
+application policies.
 
 ## Development
 
@@ -141,8 +167,8 @@ blockLightSourcesIn, fluidStateFromWorld, updateFluids, updateRedstone,
 makeWorldMechanicsStage, makeWorldMechanicsPreview,
 removeUnsupportedBlocksAbove, the
 mining-experience handoff, the explosion and primed-TNT interaction functions,
-the furnace, crop, and Wither interaction functions are documented there as
-well.
+the Nether and End portal, furnace, crop, and Wither interaction functions are
+documented there as well.
 
 ## Architecture
 
@@ -175,9 +201,16 @@ collision hull, fluid occupancy, state-aware fluid volumes, local fluid
 level/flow/mixing transitions, emitted-light source queries and bounded
 six-neighbour propagation, and bounded redstone source/wire/device/lamp
 transitions),
-explosion, furnace, crop, and Wither interactions plus direct mc-sim service
-composition, including the optional generic entity roster, are the current
-gameplay boundary. Remaining work is tracked as explicit gaps in the
+explosion, Nether and End portal, furnace, crop, and Wither interactions plus direct
+mc-sim service composition, including the optional generic entity roster, are
+the current gameplay boundary. The opt-in generated-world provider adds deterministic
+mc-worldgen terrain, bounded preload, lifecycle cleanup, and memory or
+`StoragePort`-backed chunk persistence. `generation: 'flat'` materializes the
+validated `surfaceY` with the local dimension-aware `flatChunkOf` transformation;
+`generation: 'natural'` keeps the terrain produced by mc-worldgen and forwards
+its `terrain` options. Both modes are part of the materialized chunk data rather
+than launch-only metadata.
+Remaining work is tracked as explicit gaps in the
 architecture and responsibility documents rather than hidden behind
 compatibility adapters.
 
@@ -189,8 +222,10 @@ fluid collision integration, world-wide composition, and automatic installation
 into a launch remain caller or application responsibilities.
 
 The root `physics`, `save`, and `worldgen` namespaces are direct access points
-to upstream portable functionality; they do not imply that the local preview
-is a complete physics, persistence, or generated-world runtime.
+to upstream portable functionality. The default preview remains a focused
+port-driven lifecycle; `makeGameplayPreview` provides the explicit physics and
+local-mechanics composition for a sparse world, while the generated-world
+layers provide an explicit bounded runtime for applications that need one.
 
 ## License
 

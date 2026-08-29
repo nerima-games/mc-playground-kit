@@ -3,6 +3,8 @@ import {
   type BlockId,
   type BlockPosition,
   type BlockPositionKey,
+  LIGHT_LEVEL_MAX,
+  type LightLevel,
   aabbIntersects,
   aabbOfBlock,
   blockNeighbours,
@@ -11,34 +13,36 @@ import {
   isKnownBlockId,
   position as kernelPosition,
   lightEmissionOfBlockId,
+  LightLevel as makeLightLevel,
   transmitsLight,
 } from '@nerima-games/mc-kernel'
 import { type BlockSource, readBlockAt } from './block-world.js'
 
 const GRID_STEP = 1
-const NO_EMITTED_LIGHT = 0
+const DARK_LIGHT_LEVEL = 0
+const NO_EMITTED_LIGHT = makeLightLevel(DARK_LIGHT_LEVEL)
 const LIGHT_ATTENUATION = 1
-const MAX_BLOCK_LIGHT_LEVEL = 15
+const MAX_BLOCK_LIGHT_LEVEL = LIGHT_LEVEL_MAX
 
 type LightQueueEntry = {
-  readonly level: number
+  readonly level: LightLevel
   readonly position: BlockPosition
 }
 
 type MutableBlockLightField = {
-  readonly levels: Map<BlockPositionKey, number>
-  readonly visible: Map<BlockPositionKey, number>
+  readonly levels: Map<BlockPositionKey, LightLevel>
+  readonly visible: Map<BlockPositionKey, LightLevel>
   readonly queue: Array<LightQueueEntry>
 }
 
 export type BlockLightSource = {
   readonly blockId: BlockId
   readonly bounds: AABB
-  readonly level: number
+  readonly level: LightLevel
   readonly position: BlockPosition
 }
 
-export type BlockLightField = ReadonlyMap<BlockPositionKey, number>
+export type BlockLightField = ReadonlyMap<BlockPositionKey, LightLevel>
 
 type LightPropagationContext = {
   readonly field: MutableBlockLightField
@@ -109,7 +113,7 @@ export const blockLightSourcesIn = (
 export const blockLightAt = (
   field: BlockLightField,
   position: BlockPosition,
-): number => field.get(blockPositionKeyOf(position)) ?? NO_EMITTED_LIGHT
+): LightLevel => field.get(blockPositionKeyOf(position)) ?? NO_EMITTED_LIGHT
 
 export const boundsExpandedForBlockLight = (bounds: AABB): AABB => ({
   max: kernelPosition(
@@ -136,7 +140,7 @@ const newMutableBlockLightField = (): MutableBlockLightField => ({
 const addBrighterLight = (
   context: LightPropagationContext,
   position: BlockPosition,
-  level: number,
+  level: LightLevel,
 ): void => {
   const key = blockPositionKeyOf(position)
   const knownLevel = context.field.levels.get(key) ?? NO_EMITTED_LIGHT
@@ -166,7 +170,7 @@ const spreadLightFrom = (
   context: LightPropagationContext,
   current: LightQueueEntry,
 ): void => {
-  const nextLevel = current.level - LIGHT_ATTENUATION
+  const nextLevel = makeLightLevel(current.level - LIGHT_ATTENUATION)
   if (nextLevel <= NO_EMITTED_LIGHT) {
     return
   }

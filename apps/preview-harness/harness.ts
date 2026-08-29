@@ -41,6 +41,7 @@ import {
   RendererPort,
   SimulationPort,
   WorldProviderPort,
+  type WorldProviderError,
 } from '../../src/application/preview-ports'
 import { BOOT_PHASE_ORDER, type BootPhase, type PhaseTiming } from '../../src/domain/boot-phase'
 import type { PreviewModule, StageOrderViolation } from '../../src/domain/launch-options'
@@ -337,7 +338,7 @@ export const makeHarness = async (config: HarnessConfig): Promise<Harness> => {
     })
   }
 
-  const doLaunch = (isRelaunch: boolean): Effect.Effect<void> =>
+  const doLaunch = (isRelaunch: boolean): Effect.Effect<void, WorldProviderError> =>
     Effect.gen(function* () {
       // `resolve-options`, `modules` and `first-frame` are charged around the
       // library's own calls rather than inside a Port, because no Port is
@@ -359,7 +360,7 @@ export const makeHarness = async (config: HarnessConfig): Promise<Harness> => {
       )
     }).pipe(Effect.provide(fakes))
 
-  const runCommand = (command: Command): Effect.Effect<void> => {
+  const runCommand = (command: Command): Effect.Effect<void, WorldProviderError> => {
     switch (command.kind) {
       case 'launch':
       case 'relaunch':
