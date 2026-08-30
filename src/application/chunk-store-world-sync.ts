@@ -3,21 +3,20 @@ import {
   type ChunkDirtySubscription,
   type ChunkStoreApi,
 } from '@nerima-games/mc-worldgen'
-import { Effect, Ref } from 'effect'
-import { chunkKeyOf } from '@nerima-games/mc-kernel'
-
-import { type BlockWorld } from '../domain/block-world.js'
 import {
   type ChunkWorld,
   blockWorldOfChunkWorld,
   removeChunkFromChunkWorld,
   storeChunkInChunkWorld,
 } from '../domain/chunk-world.js'
+import { Effect, Ref } from 'effect'
 import {
   type WorldRuntimeSnapshotError,
   snapshotChunk,
   snapshotWorldRuntime,
 } from './world-runtime-snapshot.js'
+import { type BlockWorld } from '../domain/block-world.js'
+import { chunkKeyOf } from '@nerima-games/mc-kernel'
 
 export type ChunkStoreWorldSync = {
   readonly current: Effect.Effect<BlockWorld>

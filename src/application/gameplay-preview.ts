@@ -1,12 +1,19 @@
 import {
+  AIR_BLOCK_ID,
+  type BlockId,
+  type BlockPositionKey,
+  type StageRegistration,
+  StageId as makeStageId,
+} from '@nerima-games/mc-kernel'
+import {
   type BlockSource,
   type BlockWorld,
   blockAt,
 } from '../domain/block-world.js'
-import { type PreviewModule } from '../domain/launch-options.js'
-import { resolveOptionsForBlockSource } from '../domain/physics-world.js'
-import { type WorldRuntime } from './generated-world-provider.js'
-import { type WorldRuntimeSnapshotError } from './world-runtime-snapshot.js'
+import {
+  type ChunkStoreWorldSync,
+  makeChunkStoreWorldSync,
+} from './chunk-store-world-sync.js'
 import {
   type CropService,
   type PlayerService,
@@ -23,22 +30,15 @@ import {
   PLAYER_HALF_WIDTH,
 } from '@nerima-games/mc-physics'
 import {
-  AIR_BLOCK_ID,
-  type BlockId,
-  type BlockPositionKey,
-  type StageRegistration,
-  StageId as makeStageId,
-} from '@nerima-games/mc-kernel'
-import {
   type WorldMechanicsStageOptions,
   type WorldMechanicsState,
   makeWorldMechanicsStage,
   worldMechanicsStateFromWorld,
 } from '../domain/world-mechanics.js'
-import {
-  type ChunkStoreWorldSync,
-  makeChunkStoreWorldSync,
-} from './chunk-store-world-sync.js'
+import { type PreviewModule } from '../domain/launch-options.js'
+import { type WorldRuntime } from './generated-world-provider.js'
+import { type WorldRuntimeSnapshotError } from './world-runtime-snapshot.js'
+import { resolveOptionsForBlockSource } from '../domain/physics-world.js'
 
 /** The stage that advances local fluid and redstone state. */
 export const GAMEPLAY_STAGE_IDS = {
