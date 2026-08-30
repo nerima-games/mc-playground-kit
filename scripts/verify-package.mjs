@@ -201,6 +201,16 @@ try {
       2,
     )  }\n`,
   );
+  // The packed archive's own `dependencies` list several @nerima-games/* siblings,
+  // which npm resolves from GitHub Packages. The CI auth step only configures
+  // pnpm's user-level config, not npm's, and this consumer directory is a fresh
+  // npm project with none of that — so it needs its own .npmrc. The literal
+  // `${NODE_AUTH_TOKEN}` placeholder is intentional: npm expands env vars found
+  // in .npmrc at read time, so the token itself is never written to disk.
+  await writeFile(
+    join(consumerDirectory, ".npmrc"),
+    `@nerima-games:registry=https://npm.pkg.github.com\n//npm.pkg.github.com/:_authToken=\${NODE_AUTH_TOKEN}\n`,
+  );
   run("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund", archivePath], {
     cwd: consumerDirectory,
     timeoutMs: 180_000,
