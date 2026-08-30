@@ -11,6 +11,7 @@ import {
   type PlaygroundPorts,
   RendererPort,
   SimulationPort,
+  type WorldProviderError,
   WorldProviderPort,
 } from './preview-ports.js'
 import { runBootSequence, startGeneration } from './playground-boot.js'
@@ -32,9 +33,45 @@ export const makePlayground: Effect.Effect<PlaygroundApi> = Effect.gen(function*
     Effect.flatMap(Option.match({ onNone: () => Effect.void, onSome: (handle) => handle.stop })),
   )
 
+  const bestEffort = (name: string, step: Effect.Effect<void, unknown, never>) =>
+    step.pipe(
+      Effect.catchAllCause((cause) =>
+        Effect.logError(`Playground teardown failed for ${name}: ${Cause.pretty(cause)}`),
+      ),
+    )
+
+  const releaseServices = (services: BootServices) =>
+    Effect.forEach(
+      [
+        ['input', services.input.detach],
+        ['renderer', services.renderer.detach],
+        ['simulation', services.simulation.stop],
+        ['world', services.world.closeWorld],
+      ] as const,
+      ([name, step]) => bestEffort(name, step),
+      { discard: true },
+    )
+
+  const stopGenerationIfInstalled = Effect.gen(function* stopGenerationIfInstalledGen() {
+    const installed = yield* Ref.get(generationRef)
+    if (Option.isNone(installed)) {
+      return
+    }
+
+    yield* bestEffort('generation', stopGeneration(installed.value))
+    yield* Ref.set(generationRef, Option.none())
+  })
+
+  const cleanupFailedLaunch = (services: BootServices) =>
+    Effect.gen(function* cleanupFailedLaunchGen() {
+      yield* stopGenerationIfInstalled
+      yield* Ref.set(handleRef, Option.none())
+      yield* releaseServices(services)
+    })
+
   const launch = (
     options?: LaunchOptions | undefined,
-  ): Effect.Effect<PlaygroundHandle, never, ClockPort | PlaygroundPorts> =>
+  ): Effect.Effect<PlaygroundHandle, WorldProviderError, ClockPort | PlaygroundPorts> =>
     Effect.gen(function* launchGen() {
       yield* stopCurrent
       const services: BootServices = {
@@ -44,63 +81,67 @@ export const makePlayground: Effect.Effect<PlaygroundApi> = Effect.gen(function*
         simulation: yield* SimulationPort,
         world: yield* WorldProviderPort,
       }
-      const { budget, resolved, stages, timings, warnings } = yield* runBootSequence(services, options)
-      const generation = yield* startGeneration(generationRef, services, stages)
+      const boot = Effect.gen(function* bootGen() {
+        const { budget, resolved, stages, timings, warnings } = yield* runBootSequence(services, options)
+        const generation = yield* startGeneration(generationRef, services, stages)
 
-      const teardown: Effect.Effect<void> = Effect.gen(function* teardownGen() {
-        yield* stopGeneration(generation)
-        const claimed = yield* Ref.modify(generationRef, (installed) => {
-          if (Option.isSome(installed) && installed.value === generation) {
-            return [true, Option.none<Generation>()]
+        const teardown: Effect.Effect<void> = Effect.gen(function* teardownGen() {
+          yield* bestEffort('generation', stopGeneration(generation))
+          const claimed = yield* Ref.modify(generationRef, (installed) => {
+            if (Option.isSome(installed) && installed.value === generation) {
+              return [true, Option.none<Generation>()]
+            }
+            return [false, installed]
+          })
+          if (!claimed) {
+            return
           }
-          return [false, installed]
+          yield* Ref.set(handleRef, Option.none())
+          yield* releaseServices(services)
         })
-        if (!claimed) {
-          return
-        }
-        yield* Ref.set(handleRef, Option.none())
+
+        yield* Effect.logInfo(`playground: ${describeBootVerdict(budget)}`)
         yield* Effect.forEach(
-          [services.input.detach, services.renderer.detach, services.simulation.stop, services.world.closeWorld],
-          (step) => step.pipe(Effect.catchAllCause((cause) => Effect.logError(`Playground teardown: ${Cause.pretty(cause)}`))),
+          warnings,
+          (violation) =>
+            Effect.logWarning(
+              `playground: stage ${violation.stage} runs at index ${String(violation.declaredIndex)} but declared after ` +
+                `${violation.mustFollow}, which is at index ${String(violation.constraintIndex)}. ` +
+                'This harness runs stages in declaration order and does not resolve `after` — the application composition root owns the total order.',
+            ),
           { discard: true },
         )
+
+        const handle: PlaygroundHandle = {
+          budget,
+          cameraPose: services.simulation.cameraPose,
+          framesDropped: generation.loop.framesDropped,
+          framesRendered: generation.loop.isRunning.pipe(
+            Effect.flatMap((running) => {
+              if (running) {
+                return Effect.map(generation.loop.framesProcessed, (count) => count + INITIAL_FRAME_COUNT)
+              }
+              return Effect.succeed(STOPPED_FRAME_COUNT)
+            }),
+          ),
+          isRunning: generation.loop.isRunning,
+          options: resolved,
+          secondsLostToClamp: generation.loop.secondsLostToClamp,
+          stageOrderWarnings: warnings,
+          stop: teardown,
+          submitFrame: generation.loop.submitFrame,
+          timings,
+        }
+
+        yield* Ref.set(handleRef, Option.some(handle))
+        return handle
       })
 
-      yield* Effect.logInfo(`playground: ${describeBootVerdict(budget)}`)
-      yield* Effect.forEach(
-        warnings,
-        (violation) =>
-          Effect.logWarning(
-            `playground: stage ${violation.stage} runs at index ${String(violation.declaredIndex)} but declared after ` +
-              `${violation.mustFollow}, which is at index ${String(violation.constraintIndex)}. ` +
-              'This harness runs stages in declaration order and does not resolve `after` — the application composition root owns the total order.',
-          ),
-        { discard: true },
-      )
-
-      const handle: PlaygroundHandle = {
-        budget,
-        cameraPose: services.simulation.cameraPose,
-        framesDropped: generation.loop.framesDropped,
-        framesRendered: generation.loop.isRunning.pipe(
-          Effect.flatMap((running) => {
-            if (running) {
-              return Effect.map(generation.loop.framesProcessed, (count) => count + INITIAL_FRAME_COUNT)
-            }
-            return Effect.succeed(STOPPED_FRAME_COUNT)
-          }),
+      return yield* boot.pipe(
+        Effect.catchAllCause((cause) =>
+          cleanupFailedLaunch(services).pipe(Effect.zipRight(Effect.failCause(cause))),
         ),
-        isRunning: generation.loop.isRunning,
-        options: resolved,
-        secondsLostToClamp: generation.loop.secondsLostToClamp,
-        stageOrderWarnings: warnings,
-        stop: teardown,
-        submitFrame: generation.loop.submitFrame,
-        timings,
-      }
-
-      yield* Ref.set(handleRef, Option.some(handle))
-      return handle
+      )
     })
 
   return {
@@ -114,5 +155,5 @@ export const PlaygroundLayer: Layer.Layer<Playground> = Layer.effect(Playground,
 
 export const launchPlayground = (
   options?: LaunchOptions | undefined,
-): Effect.Effect<PlaygroundHandle, never, Playground | ClockPort | PlaygroundPorts> =>
+): Effect.Effect<PlaygroundHandle, WorldProviderError, Playground | ClockPort | PlaygroundPorts> =>
   Effect.flatMap(Playground, (playground) => playground.launch(options))

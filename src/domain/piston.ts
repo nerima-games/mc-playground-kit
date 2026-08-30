@@ -1,4 +1,4 @@
-import { type BlockId, capabilityOfBlockId } from '@nerima-games/mc-kernel'
+import { type BlockFace, type BlockId, capabilityOfBlockId } from '@nerima-games/mc-kernel'
 import { Effect } from 'effect'
 
 export const PISTON_PUSH_LIMIT = 12
@@ -44,7 +44,6 @@ export const planPush = (column: ReadonlyArray<BlockId>): PushOutcome => {
   return { kind: 'push', plan: { length: column.length, moved: [...column] } }
 }
 
-export type PistonFacing = 'down' | 'east' | 'north' | 'south' | 'up' | 'west'
 export type PistonKind = 'normal' | 'sticky'
 export type PistonState = 'extended' | 'retracted'
 
@@ -75,7 +74,7 @@ export type PistonMove = {
 
 export type PistonMovementPlan = {
   readonly piston: PistonPosition
-  readonly facing: PistonFacing
+  readonly facing: BlockFace
   readonly kind: PistonKind
   readonly fromState: PistonState
   readonly toState: PistonState
@@ -101,13 +100,13 @@ export type PistonMovementOutcome =
 
 export type PistonTransitionRequest = {
   readonly piston: PistonPosition
-  readonly facing: PistonFacing
+  readonly facing: BlockFace
   readonly kind: PistonKind
   readonly state: PistonState
   readonly powered: boolean
 }
 
-const OFFSETS: Readonly<Record<PistonFacing, PistonPosition>> = {
+const OFFSETS: Readonly<Record<BlockFace, PistonPosition>> = {
   down: { [X_COORDINATE]: ZERO_DISTANCE, [Y_COORDINATE]: NEGATIVE_DISTANCE, [Z_COORDINATE]: ZERO_DISTANCE },
   east: { [X_COORDINATE]: POSITIVE_DISTANCE, [Y_COORDINATE]: ZERO_DISTANCE, [Z_COORDINATE]: ZERO_DISTANCE },
   north: { [X_COORDINATE]: ZERO_DISTANCE, [Y_COORDINATE]: ZERO_DISTANCE, [Z_COORDINATE]: NEGATIVE_DISTANCE },
@@ -118,7 +117,7 @@ const OFFSETS: Readonly<Record<PistonFacing, PistonPosition>> = {
 
 export const pistonPositionAt = (
   origin: PistonPosition,
-  facing: PistonFacing,
+  facing: BlockFace,
   distance: number,
 ): PistonPosition => {
   const offset = OFFSETS[facing]

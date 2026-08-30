@@ -25,7 +25,7 @@
  * real time to pass, so nothing here can flake on a loaded CI machine.
  */
 import { describe, expect, it } from '@effect/vitest'
-import { Deferred, Effect, Layer, Option, Ref } from 'effect'
+import { Deferred, Effect, Layer, Logger, Option, Ref } from 'effect'
 import { BOOT_PHASE_ORDER } from '../src/domain/boot-phase'
 import { DEFAULT_FLAT_WORLD, DEFAULT_SPAWN_KIT, type PreviewModule } from '../src/domain/launch-options'
 import {
@@ -70,7 +70,7 @@ const POSE: CameraPoseSnapshot = {
  * different repositories' surfaces are touched is what these tests are about,
  * and four separate logs could not express it.
  */
-const makeFakes = (costs: PortCosts = CHEAP, failInputDetach = false) =>
+const makeFakes = (costs: PortCosts = CHEAP, failInputDetach = false, failInputAttach = false) =>
   Effect.gen(function* () {
     const events = yield* Ref.make<ReadonlyArray<string>>([])
     const nowSecs = yield* Ref.make(0)
@@ -101,7 +101,7 @@ const makeFakes = (costs: PortCosts = CHEAP, failInputDetach = false) =>
         detach: step('renderer.detach', 0),
       }),
       Layer.succeed(InputPort, {
-        attach: step('input.attach', costs.input),
+        attach: (failInputAttach ? step('input.attach', costs.input).pipe(Effect.zipRight(Effect.die('input.attach failure'))) : step('input.attach', costs.input)),
         detach: failInputDetach ? Effect.die('input.detach failure') : step('input.detach', 0),
       }),
     )
@@ -227,6 +227,58 @@ describe('boot', () => {
       expect(handle.options.world.surfaceY).toBe(DEFAULT_FLAT_WORLD.surfaceY)
 
       yield* handle.stop
+    }).pipe(Effect.provide(PlaygroundLayer)),
+  )
+
+  it.effect('releases acquired resources when boot fails during input attach', () =>
+    Effect.gen(function* () {
+      const fakes = yield* makeFakes(CHEAP, false, true)
+      const result = yield* Effect.exit(launchPlayground().pipe(Effect.provide(fakes.layer)))
+
+      expect(result._tag).toBe('Failure')
+      expect(yield* fakes.events).toStrictEqual([
+        'world.open:playground',
+        'sim.spawn:y=50',
+        'renderer.attach',
+        'input.attach',
+        'input.detach',
+        'renderer.detach',
+        'sim.stop',
+        'world.close',
+      ])
+    }).pipe(Effect.provide(PlaygroundLayer)),
+  )
+
+  it.effect('cleans up a started generation when post-startup logging fails', () =>
+    Effect.gen(function* () {
+      const fakes = yield* makeFakes()
+      const throwingLogger = Logger.simple<unknown, void>((message) => {
+        if (String(message).includes('playground:')) {
+          throw new Error('logger failure')
+        }
+      })
+      const result = yield* Effect.exit(
+        launchPlayground().pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              fakes.layer,
+              Logger.replace(Logger.defaultLogger, throwingLogger),
+            ),
+          ),
+        ),
+      )
+
+      expect(result._tag).toBe('Failure')
+      expect(yield* fakes.events).toStrictEqual([
+        'world.open:playground',
+        'sim.spawn:y=50',
+        'renderer.attach',
+        'input.attach',
+        'input.detach',
+        'renderer.detach',
+        'sim.stop',
+        'world.close',
+      ])
     }).pipe(Effect.provide(PlaygroundLayer)),
   )
 })

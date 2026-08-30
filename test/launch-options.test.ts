@@ -22,7 +22,7 @@ import {
   type LaunchOptions,
   type PreviewModule,
 } from '../src/domain/launch-options'
-import { DeltaTimeSecs, StageId, WorldId, position, type StageRegistration } from '@nerima-games/mc-kernel'
+import { DeltaTimeSecs, StackCount, StageId, WorldId, position, type StageRegistration } from '@nerima-games/mc-kernel'
 
 const stage = (id: string, after?: ReadonlyArray<string>): StageRegistration => ({
   id: StageId(id),
@@ -160,12 +160,12 @@ describe('merging', () => {
   it.effect('a fully specified options bag passes straight through', () =>
     Effect.sync(() => {
       const resolved = normalizeLaunchOptions({
-        world: { worldId: WorldId('redstone-bench'), seed: 42, surfaceY: 64, radiusChunks: 2 },
+        world: { worldId: WorldId('redstone-bench'), seed: 42, generation: 'natural', surfaceY: 64, radiusChunks: 2 },
         spawnKit: {
           feetPosition: position(8, 65, -8),
           yawRadians: 1.5,
           pitchRadians: -0.2,
-          hotbar: [{ item: 'torch', count: 16 }],
+          hotbar: [{ item: 'torch', count: StackCount(16) }],
         },
         modules: [moduleOf(stage('redstone:tick'))],
       })
@@ -173,6 +173,7 @@ describe('merging', () => {
       expect(resolved.world).toStrictEqual({
         worldId: WorldId('redstone-bench'),
         seed: 42,
+        generation: 'natural',
         surfaceY: 64,
         radiusChunks: 2,
       })

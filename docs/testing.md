@@ -72,6 +72,21 @@ is a build artifact and is not source-controlled.
   upstream crafting/container transitions are available through
   GameplayServicesLayer, and verifies the typed entity composition's
   spawn/snapshot/reset lifecycle through gameplayServicesLayerWithEntities.
+- test/flat-chunk.test.ts covers deterministic dimension-aware flat terrain
+  materialization and validation of the finite chunk boundary.
+- test/generated-world-provider.test.ts covers flat and natural generation,
+  bounded preload, idempotent open, validation, raw-store exposure, and close.
+- test/world-runtime-snapshot.test.ts covers loaded-chunk snapshots and the
+  explicit mc-worldgen-to-mc-kernel chunk conversion.
+- test/world-runtime-persistence.test.ts covers changed-cell diffing,
+  unchanged writes, unloaded/out-of-bounds failures, and serialized writes.
+- test/gameplay-preview.test.ts covers live collision reads, upstream physics
+  input, and local mechanics-stage composition.
+- test/generated-gameplay.test.ts covers generated launch composition, spawn
+  state restoration, persistence, invalid spawn kits, and launch cleanup.
+- test/nether-portal-interaction.test.ts and
+  test/end-portal-interaction.test.ts cover upstream frame detection and local
+  portal-block materialization boundaries.
 
 Tests use injected services and a deterministic clock. Browser lifecycle tests
 use a DOM test environment; they do not require WebGL or pointer lock.

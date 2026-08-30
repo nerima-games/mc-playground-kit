@@ -53,9 +53,11 @@ import {
   type GameModule,
   type ItemType,
   type Position,
+  type StackCount,
   type StageId,
   type StageRegistration,
   type WorldId,
+  StackCount as makeStackCount,
   WorldId as makeWorldId,
   position,
 } from '@nerima-games/mc-kernel'
@@ -83,14 +85,9 @@ const pick = <T>(supplied: T | undefined, fallback: T): T => {
 // World
 // ---------------------------------------------------------------------------
 
-/**
- * The mini flat world a playground stands up.
- *
- * The world is intentionally *mini* and *flat*, both load-bearing.
- * Flat because a preview verifying a redstone repeater must not also be
- * verifying a cave carver; mini because the boot budget is one second and
- * terrain generation is the largest single item in it (domain/boot-phase.ts).
- */
+export type WorldGenerationMode = 'flat' | 'natural'
+
+/** The deterministic terrain policy used when a generated world is opened. */
 export type FlatWorldSpec = {
   /** Which save this playground writes to. Previews use a throwaway id. */
   readonly worldId: WorldId
@@ -100,7 +97,12 @@ export type FlatWorldSpec = {
    * starting point for repeatable interaction and capture.
    */
   readonly seed: number
-  /** Y of the topmost solid block. The player's feet spawn at `surfaceY + 1`. */
+  /** The terrain mode. Natural mode delegates the complete chunk to mc-worldgen. */
+  readonly generation: WorldGenerationMode
+  /**
+   * Y of the topmost solid block for flat generation. Natural generation
+   * keeps this value as the stable spawn fallback and does not rewrite terrain.
+   */
   readonly surfaceY: number
   /**
    * Chunks generated around the origin before the first frame, as a radius.
@@ -112,6 +114,7 @@ export type FlatWorldSpec = {
 }
 
 export const DEFAULT_FLAT_WORLD: FlatWorldSpec = {
+  generation: 'flat',
   radiusChunks: 1,
   seed: 0,
   /**
@@ -128,7 +131,7 @@ export const DEFAULT_FLAT_WORLD: FlatWorldSpec = {
 
 export type HotbarSlot = {
   readonly item: ItemType
-  readonly count: number
+  readonly count: StackCount
 }
 
 /**
@@ -151,6 +154,7 @@ export type SpawnKit = {
 const SPAWN_ORIGIN_HORIZONTAL = 0
 /** Stand ON TOP of the surface block, not inside it — see the `surfaceY` comment above. */
 const SPAWN_HEIGHT_OFFSET = 1
+const DEFAULT_HOTBAR_STACK_COUNT = 64
 
 export const DEFAULT_SPAWN_KIT: SpawnKit = {
   /**
@@ -163,9 +167,9 @@ export const DEFAULT_SPAWN_KIT: SpawnKit = {
     SPAWN_ORIGIN_HORIZONTAL,
   ),
   hotbar: [
-    { count: 64, item: 'stone' },
-    { count: 64, item: 'oak_planks' },
-    { count: 64, item: 'torch' },
+    { count: makeStackCount(DEFAULT_HOTBAR_STACK_COUNT), item: 'stone' },
+    { count: makeStackCount(DEFAULT_HOTBAR_STACK_COUNT), item: 'oak_planks' },
+    { count: makeStackCount(DEFAULT_HOTBAR_STACK_COUNT), item: 'torch' },
   ],
   pitchRadians: 0,
   // Facing -Z, level. Kernel's convention: yaw 0 looks down -Z.
@@ -260,6 +264,7 @@ export const normalizeLaunchOptions = (options?: LaunchOptions | undefined): Res
       yawRadians: pick(spawnKit?.yawRadians, DEFAULT_SPAWN_KIT.yawRadians),
     },
     world: {
+      generation: pick(world?.generation, DEFAULT_FLAT_WORLD.generation),
       radiusChunks: pick(world?.radiusChunks, DEFAULT_FLAT_WORLD.radiusChunks),
       seed: pick(world?.seed, DEFAULT_FLAT_WORLD.seed),
       surfaceY: pick(world?.surfaceY, DEFAULT_FLAT_WORLD.surfaceY),

@@ -33,9 +33,10 @@ the kit does not wrap their `StageRegistration` values or duplicate the physics
 stage.
 
 The factories acquire mc-sim's `TimeService`, `PlayerService`, and `CropService`
-when their stage effects are built. The application composition root supplies
-those services, chooses the physics configuration when needed, merges the
-corresponding layers, and resolves one total order for all modules. The local
+when their stage effects are built. For these direct factories, the application
+composition root supplies those services, chooses the physics configuration
+when needed, merges the corresponding layers, and resolves one total order for
+all modules. The local
 `Playground` accepts already-built `frameStages` in `LaunchOptions.modules` and
 runs them in declaration order while reporting violated `after` metadata; it
 does not construct `GameModule.layers`, sort stages, or automatically tick
@@ -45,6 +46,15 @@ Use `makeSimStagesForPreview` when the host needs the upstream `{ state, stages 
 pair, and use the physics variants when it also owns the upstream
 `SimInputPort`. The package root exposes both names so callers can choose the
 upstream contract directly.
+
+`makeGameplayPreview(world)` is the explicit sparse-world composition. It
+creates mc-sim's controllable physics stages with the default movement values,
+adapts the supplied `BlockWorld` through `resolveOptionsForBlockSource`,
+returns the upstream `SimInputPort`, and appends the local fluid/redstone
+stage. Its collision source is live: the physics callbacks read the latest
+world produced by the mechanics stage on the following frame. Its `module` is
+still supplied explicitly through
+`LaunchOptions.modules`; the launch lifecycle does not install it implicitly.
 
 ## Generated worlds
 
@@ -61,18 +71,79 @@ const ChunkStore = worldgen.ChunkStore
 const computeChunkLights = worldgen.computeChunkLights
 ~~~
 
+For the common application composition, `GeneratedWorldProviderLayer()` uses
+the upstream generated-dimension source and in-memory `ChunkStore` directly.
+`PersistentGeneratedWorldProviderLayer()` uses the same source and store
+contract with a supplied `StoragePort`. Both provide `WorldProviderPort` for
+the existing launch lifecycle and `WorldRuntimePort` for the current runtime,
+whose `chunks` field is the raw upstream `ChunkStoreApi`; no second local store
+or compatibility wrapper is introduced:
+
+~~~ts
+import { Effect } from 'effect'
+import {
+  GeneratedWorldProviderLayer,
+  PersistentGeneratedWorldProviderLayer,
+  WorldRuntimePort,
+} from '@nerima-games/mc-playground-kit'
+
+const generated = GeneratedWorldProviderLayer({ dimension: 'overworld' })
+const persistent = PersistentGeneratedWorldProviderLayer()
+const readRuntime = Effect.gen(function* () {
+  const runtime = yield* WorldRuntimePort
+  return yield* runtime.current
+})
+~~~
+
+The persistent layer requires the application's `StoragePort` layer. The
+launch `generation` mode selects the materialization policy: `flat` validates
+and applies `surfaceY` through `flatChunkOf`, while `natural` keeps the
+mc-worldgen terrain and forwards the provider's `terrain` options. The provider
+preloads a bounded square around the origin, so applications that need
+unbounded streaming or authoritative full-world ownership must add that policy
+at their composition root.
+
 The local `ChunkWorld` below remains a finite immutable sparse-storage boundary
 for tests and small host-owned slices. The preview `WorldProvider` port remains
-an application lifecycle contract; a shipped runtime can compose it with
-`worldgen.ChunkStore` directly.
+an application lifecycle contract; the generated-world layers are the shipped
+bounded composition of that port with `worldgen.ChunkStore`.
+
+## Generated gameplay composition
+
+`launchGeneratedPlayground(options)` is the opt-in composition for a bounded
+generated world. It opens the selected flat or natural runtime, snapshots its
+loaded chunks with `snapshotWorldRuntime`, builds
+`makeGameplayPreviewFromWorldRuntime`, and launches the normal playground with
+the generated preview module before caller modules. Provide a generated-world
+provider layer together with the services and ports required by the returned
+`GeneratedGameplayRequirements`; the default preview lifecycle does not install
+this composition implicitly.
+
+The returned `GeneratedGameplayHandle` extends the normal playground handle
+with the upstream `SimInputPort`, the frame state, the local mechanics
+reference, and `persistWorld`. Spawn-kit hotbar entries are converted to
+mc-kernel item stacks, and invalid runtime values fail with
+`InvalidSpawnKitError`. A failed launch closes the opened world before
+propagating its error.
+
+`persistWorld` writes only cells changed since its last successful call to the
+raw `ChunkStoreApi` and returns `{ written, unchanged }`. Changes outside the
+loaded runtime or outside the finite world bounds fail with
+`WorldRuntimePersistenceError`. Use `snapshotWorldRuntime` and
+`persistBlockWorld` directly when the host needs separate snapshot and diff
+control. The provider remains bounded by `radiusChunks`; streaming,
+authoritative multi-dimension ownership, and full save policy stay at the
+application boundary.
 
 ## Physics and persistence
 
 `physics` is a direct namespace export of `@nerima-games/mc-physics`. Use its
 voxel raycast, body integration, world resolution, and projectile helpers when
-the host owns a physics simulation. The local collision and targeting helpers
-adapt a sparse `BlockSource` to the upstream callback contracts; they do not
-replace or wrap the upstream solver.
+the host owns a physics simulation. `makeGameplayPreview` is the kit's
+convenience composition of the upstream physics stage with a sparse
+`BlockWorld`; the local collision and targeting helpers adapt a sparse
+`BlockSource` to the upstream callback contracts and do not replace or wrap
+the solver.
 
 `save` is a direct namespace export of `@nerima-games/mc-save`. Use its format,
 envelope, encoding, storage, and durable-save APIs when the host owns
@@ -260,7 +331,10 @@ returns `{ module, state }`. Pass `module` in `LaunchOptions.modules` when the
 host wants this local stage in a preview; the playground lifecycle does not
 install it automatically. Chunk synchronization, block-state variants,
 official scheduled-tick semantics, and full-world mechanics remain host
-responsibilities.
+responsibilities. `WorldMechanicsStageOptions.onStateChange`, when supplied,
+receives the committed state after each frame that advances one or more fixed
+ticks, which lets a caller synchronize world-backed consumers without sharing
+mutable storage.
 
 `blockLightSourceAt` and `blockLightSourcesIn` expose the kernel-defined
 `lightEmission` property as immutable full-cell source records. They return
@@ -302,8 +376,9 @@ versioned chunk codec. The codec stores chunk payloads but not the world's
 vertical origin, so a loader must recreate the same `minY` for the dimension.
 Height mismatches, unknown block ids, out-of-bounds writes, and malformed bytes
 are returned as tagged outcomes. Chunk generation, streaming, persistence, and
-multi-dimension ownership remain caller-owned by this boundary; the portable
-implementations are available through `worldgen`.
+multi-dimension ownership remain caller-owned by this value boundary; the
+portable implementations and the bounded generated-world composition are
+available through `worldgen` and the provider layers above.
 
 For point queries, `blockReaderOfChunkWorld(world)` returns a read-only
 `BlockReader` without copying or converting chunk data. Supply it to
@@ -420,6 +495,26 @@ damage result preserves the upstream death payload. Wither skull projectile
 planning and serialization remain direct mc-sim operations; this package owns
 only the sparse-world summon boundary and immutable block consumption.
 
+## Nether portal interaction
+
+activateNetherPortal delegates frame matching to mc-worldgen and accepts only
+an air ignition cell. It supports both upstream portal axes, returns the
+matched PortalFrame, and materializes the returned interior positions as
+nether-portal blocks in a new immutable BlockWorld. Invalid or already-active
+frames return Option.none. Dimension travel, entity teleportation, portal
+cooldowns, and portal search are not part of this block-world transition.
+
+## End portal interaction
+
+activateEndPortal delegates completed-frame matching and the 3x3 layout to
+mc-worldgen. The caller supplies frame-facing state, and the operation accepts
+only the overworld dimension with an empty interior. It returns the matched
+CompletedEndPortal and materializes end-portal blocks in a new immutable
+BlockWorld. Missing or incorrectly facing frames, occupied interiors, and
+already-active portals return Option.none. Dimension travel, entity
+teleportation, portal search, and frame-state synchronization remain outside
+this block-world transition.
+
 ## Playground
 
 The main entry point is:
@@ -478,7 +573,8 @@ The services are deliberately lifecycle-oriented:
 
 These are composition boundaries, not implementations of the upstream
 packages. A caller can provide an Effect Layer backed by
-mc-worldgen.ChunkStore, mc-sim services, mc-render, or test doubles.
+mc-worldgen.ChunkStore, the generated-world provider layers, mc-sim services,
+mc-render, or test doubles.
 
 ## Boot phases
 

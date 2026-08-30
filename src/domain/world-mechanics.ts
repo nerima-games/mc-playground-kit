@@ -62,6 +62,7 @@ export const advanceWorldMechanics = (
 export type WorldMechanicsStageOptions = {
   readonly after?: ReadonlyArray<StageId>
   readonly id: StageId
+  readonly onStateChange?: (state: WorldMechanicsState) => void
   readonly tickIntervalSecs?: number
 }
 
@@ -108,8 +109,14 @@ export const makeWorldMechanicsStage = (
         return Effect.void
       }
 
-      return Ref.update(state, (current) =>
+      return Ref.updateAndGet(state, (current) =>
         advanceWorldMechanicsTicks(current, tickCount),
+      ).pipe(
+        Effect.tap((next) =>
+          Effect.sync(() => {
+            options.onStateChange?.(next)
+          }),
+        ),
       )
     },
   }

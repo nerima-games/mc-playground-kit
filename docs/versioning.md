@@ -32,7 +32,7 @@ Major updates require an API review of the affected upstream package. A
 dependency is not retained merely because a port could theoretically be
 implemented with it; unused direct dependencies are removed.
 
-Vitest and `@vitest/coverage-v8` are currently resolved to `4.1.10`, as declared
+Vitest and `@vitest/coverage-v8` are currently resolved to `4.1.11`, as declared
 in `package.json`. `@effect/vitest@0.30.0` still advertises a `vitest: ^3.2.0`
 peer range, so this pairing remains a dependency-review point even though the
 repository's current typecheck, lint, test, coverage, build, and package smoke

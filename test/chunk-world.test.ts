@@ -4,16 +4,18 @@ import {
   CHUNK_SIZE_XZ,
   blockIdOf,
   blockPosition,
+  blockPositionKeyOf,
   chunk,
   chunkCoord,
+  chunkKeyOf,
   encodeChunk,
   type Chunk,
 } from '@nerima-games/mc-kernel'
 import { describe, expect, it } from 'vitest'
 import {
   blockAtChunkWorld,
+  blockWorldOfChunkWorld,
   chunkAt,
-  chunkCoordKeyOf,
   emptyChunkWorld,
   encodeChunkAt,
   loadEncodedChunkIntoWorld,
@@ -62,7 +64,7 @@ describe('chunk world', () => {
     expect(result.previousBlockId).toBe(AIR_BLOCK_ID)
     expect(result.world).not.toBe(world)
     expect(result.world.chunks).not.toBe(world.chunks)
-    expect(chunkCoordKeyOf(chunkCoord(-1, -2))).toBe('-1,-2')
+    expect(chunkKeyOf(chunkCoord(-1, -2))).toBe('-1,-2')
     expect(chunkAt(result.world, chunkCoord(-1, -2))?.coord).toEqual(chunkCoord(-1, -2))
     expect(blockAtChunkWorld(result.world, position)).toBe(blockIdOf('dirt'))
     expect(blockAtChunkWorld(result.world, blockPosition(-1, -1, -17))).toBe(AIR_BLOCK_ID)
@@ -155,6 +157,11 @@ describe('chunk world', () => {
     expect(removedPresent.world.chunks.size).toBe(0)
     expect(storedAgain.outcome).toBe('stored')
     expect(storedAgain.world.chunks.size).toBe(1)
+
+    const materialized = blockWorldOfChunkWorld(stored.world)
+    expect(materialized).toEqual(new Map([
+      [blockPositionKeyOf(blockPosition(-31, 2, 50)), blockIdOf('dirt')],
+    ]))
   })
 
   it('rejects chunks with a different world height', () => {

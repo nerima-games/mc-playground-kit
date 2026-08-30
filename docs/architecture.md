@@ -29,6 +29,7 @@ src/
     boot-phase.ts       pure phase timing and budget decisions
     block-world.ts       immutable sparse block-world data and point-read source
     chunk-world.ts       finite-height sparse chunk storage, point reader, and kernel codec boundary
+    flat-chunk.ts        deterministic dimension-aware flat terrain materialization
     block-interaction-state.ts world and PlayerStorage transition state
     block-breaking.ts    block break rules and inventory drops
     block-support-interaction.ts kernel-backed support and falling transitions
@@ -51,6 +52,8 @@ src/
     explosion-interaction.ts explosion/TNT planning and sparse-world application
     furnace-interaction.ts inventory/furnace transitions delegated to mc-sim
     crop-interaction.ts  crop/world/inventory transitions delegated to mc-sim
+    nether-portal-interaction.ts frame detection and interior activation via mc-worldgen
+    end-portal-interaction.ts frame-state matching and interior activation via mc-worldgen
     wither-interaction.ts Wither summon/world transitions delegated to mc-sim
   application/
     preview-ports.ts    narrow lifecycle contracts and Effect Tags
@@ -61,6 +64,11 @@ src/
     playground-boot.ts  timed boot sequence and frame generation setup
     playground-service.ts generation ownership and teardown orchestration
     browser-preview.ts  DOM/canvas/RAF lifecycle boundary
+    generated-world-provider.ts bounded mc-worldgen generation and ChunkStore runtime
+    world-runtime-snapshot.ts raw ChunkStore to sparse BlockWorld snapshot boundary
+    world-runtime-persistence.ts sparse diff and raw ChunkStore write boundary
+    gameplay-preview.ts mc-sim physics plus local mechanics composition
+    generated-gameplay.ts generated runtime and playground composition
   index.ts              explicit package barrel
 ~~~
 
@@ -181,9 +189,14 @@ conversion, registry validation, and versioned binary encoding. ChunkWorld is a
 storage/value boundary. blockReaderOfChunkWorld exposes a read-only point-query
 view for target/projectile/single-cell collision APIs; it intentionally does not
 provide range enumeration. Generation, streaming, multi-dimension ownership,
-and persistence policy remain outside it. The portable generated-world
-implementation is available through the root `worldgen` namespace, but the
-preview lifecycle does not instantiate it. The kernel chunk codec does not
+and persistence policy remain outside it. `generated-world-provider.ts`
+composes mc-worldgen's `generatedDimensionChunkSource` with either its in-memory
+or `StoragePort`-backed `ChunkStore`, validates the launch world specification,
+preloads a bounded radius, and exposes the raw store through `WorldRuntimePort`.
+Flat generation applies the dimension-aware `flatChunkOf` transformation to
+each generated chunk; natural generation keeps the terrain from mc-worldgen
+and forwards its terrain options. Unbounded streaming and authoritative
+full-world ownership remain application policy. The kernel chunk codec does not
 carry the world's vertical origin, so the dimension configuration must be
 restored by the caller when loading a chunk.
 
@@ -223,6 +236,20 @@ BlockWorld and returns the upstream charging, spawn-explosion, damage, and death
 descriptors. Wither movement, armour, regeneration, damage, and projectiles
 remain owned by mc-sim; this package does not introduce an entity or AI adapter.
 
+nether-portal-interaction.ts delegates frame detection and portal layout to
+mc-worldgen. It accepts an air ignition cell, detects either supported portal
+axis, and materializes the upstream interior layout as nether-portal blocks in
+a new BlockWorld. Frame validation and dimensions remain owned by mc-worldgen;
+dimension travel, entity teleportation, portal cooldowns, and portal search
+remain application responsibilities.
+
+end-portal-interaction.ts delegates completed-frame matching and the 3x3 portal
+layout to mc-worldgen. It requires the caller's frame-state reader to preserve
+the upstream facing data, accepts only the overworld dimension and an empty
+interior, and materializes end-portal blocks in a new BlockWorld. Dimension
+travel, entity teleportation, portal search, and frame-state synchronization
+remain application responsibilities.
+
 Crafting and container operations remain direct InventoryService capabilities
 from mc-sim. GameplayServicesLayer makes those published transitions available
 through the same Effect environment; no local recipe or container adapter is
@@ -246,19 +273,37 @@ callbacks, RAF scheduling, and the mc-sim loop used by a runtime's optional
 frame function. Runtime creation remains injected so the package can be tested
 without WebGL or pointer lock.
 
+gameplay-preview.ts is the explicit sparse-world gameplay composition. It uses
+mc-sim's controllable physics stages, maps the supplied BlockWorld to the
+upstream collision callbacks, returns the upstream input port, and appends the
+local fluid/redstone stage. The collision reader follows the immutable world
+published by that stage, so a mechanics tick is visible to physics on the next
+frame. The stage can also report each committed state through
+`WorldMechanicsStageOptions.onStateChange`. It remains a caller-supplied
+PreviewModule rather than an implicit part of launchPlayground.
+
+The generated gameplay boundary is opt-in. `generated-world-provider.ts` owns
+the bounded generated-dimension and raw ChunkStore lifecycle;
+`world-runtime-snapshot.ts` converts loaded upstream chunks into the local
+sparse BlockWorld boundary, and `world-runtime-persistence.ts` diffs that
+boundary back into the upstream store. `generated-gameplay.ts` composes those
+pieces with `makeGameplayPreview` and the existing playground lifecycle while
+leaving streaming, authoritative world ownership, and host service layers at
+the application boundary.
+
 ## Non-goals
 
 This architecture does not claim to implement official Minecraft mechanics.
-The local preview architecture does not implicitly install the optional
-world-mechanics preview module, compose full chunk/world generation or
-streaming, sky-light or full-world lighting, collision resolution and physics, entity-specific
-behavior, networking, persistence, mobs, rendering, or input behavior. The
-portable generated-world and light-grid APIs remain directly available under
-`worldgen`. The implemented
+The local preview architecture does not implicitly install GameplayPreview or
+the optional world-mechanics preview module, compose unbounded chunk streaming,
+sky-light or full-world lighting, entity-specific behavior, authoritative
+full-world persistence, networking, mobs, rendering, or input behavior. The
+bounded generated-world provider and portable light-grid APIs remain available
+through the root exports and `worldgen`. The implemented
 finite-height sparse ChunkWorld, block-targeting, projectile, block (including
 vertical support detachment, falling-block transitions, collision hull queries,
 fluid transitions and state-aware volumes, and bounded redstone device
-transitions), explosion, furnace,
-crop, and Wither interaction boundaries are intentionally smaller than full
-world mechanics. Each gap has a more appropriate owner; see
+transitions), explosion, furnace, crop, Nether and End portal, and Wither interaction
+boundaries are intentionally smaller than full world mechanics. Each gap has a
+more appropriate owner; see
 responsibility.md.
