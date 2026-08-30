@@ -2,6 +2,7 @@
   "name": "@nerima-games/mc-playground-kit",
   "version": "0.2.0",
   "type": "module",
+  "main": "./dist/index.js",
   "description": "Effect-based lifecycle and preview boundaries for the nerima-games Minecraft packages.",
   "homepage": "https://github.com/nerima-games/mc-playground-kit#readme",
   "repository": {
