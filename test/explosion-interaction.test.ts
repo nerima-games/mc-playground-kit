@@ -89,12 +89,12 @@ describe('explosion interaction', () => {
     )
 
     expect(waiting.plan.after).toEqual({
-      _tag: 'Primed',
+      kind: 'primed',
       remainingFuseSecs: 1.5,
     })
     expect(waiting.plan.explosion).toBeUndefined()
     expect(waiting.world).toBe(world)
-    expect(detonated.plan.after).toEqual({ _tag: 'Detonated' })
+    expect(detonated.plan.after).toEqual({ kind: 'detonated' })
     expect(detonated.plan.explosion).toBeDefined()
     expect(blockAt(detonated.world, position)).toBe(AIR_BLOCK_ID)
   })

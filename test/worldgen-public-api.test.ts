@@ -1,4 +1,4 @@
-import { BlockId, lightEmissionOfBlockId } from '@nerima-games/mc-kernel'
+import { AIR_BLOCK_ID, BlockId, lightEmissionOfBlockId } from '@nerima-games/mc-kernel'
 import { describe, expect, it } from 'vitest'
 import { worldgen } from '../src/index'
 
@@ -10,7 +10,7 @@ describe('public worldgen namespace', () => {
     expect(first.coord).toStrictEqual(worldgen.chunkCoord(0, 0))
     expect(Array.from(first.blocks)).toStrictEqual(Array.from(second.blocks))
     expect(first.biomes).toStrictEqual(second.biomes)
-    expect(first.blocks.some((block) => block !== worldgen.AIR_BLOCK_ID)).toBe(true)
+    expect(first.blocks.some((block) => block !== AIR_BLOCK_ID)).toBe(true)
     expect(worldgen.getBlockAt(first, 0, 0, 0)).toBeTypeOf('number')
   })
 

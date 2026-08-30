@@ -1,7 +1,8 @@
 import { type BlockCollision, blockCollisionAt } from './block-collision.js'
-import { type BlockSource } from './block-world.js'
+import { type BlockSource, readBlockAt } from './block-world.js'
 import { type SimPhysicsConfig } from '@nerima-games/mc-sim'
 import { blockPosition } from '@nerima-games/mc-kernel'
+import { blockPropertiesAtFromKernel } from '@nerima-games/mc-physics'
 
 type ResolveOptions = SimPhysicsConfig['resolve']
 type BlockShapeAt = NonNullable<ResolveOptions['blockShapeAt']>
@@ -38,6 +39,9 @@ export const resolveOptionsForBlockSource = (
   options: BlockPhysicsOptions,
 ): ResolveOptions => ({
   ...options,
+  blockPropertiesAt: blockPropertiesAtFromKernel((blockX, blockY, blockZ) =>
+    readBlockAt(source, blockPosition(blockX, blockY, blockZ)),
+  ),
   blockShapeAt: (blockX, blockY, blockZ) => {
     const coordinates: BlockCoordinates = [blockX, blockY, blockZ]
     const collision = collisionAt(source, coordinates)
@@ -46,6 +50,4 @@ export const resolveOptionsForBlockSource = (
     }
     return relativeBoundsOf(collision, coordinates)
   },
-  isBlockSolid: (blockX, blockY, blockZ) =>
-    collisionAt(source, [blockX, blockY, blockZ]) !== null,
 })

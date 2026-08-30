@@ -17,7 +17,7 @@ import {
 
 export type BlockExplosionProfile = (blockId: BlockId) => ExplosionBlock | undefined
 
-export type BlockWorldExplosionRequest<S> = Omit<ExplosionRequest<S>, 'blocks'> & {
+export type BlockWorldExplosionRequest = Omit<ExplosionRequest, 'blocks'> & {
   readonly world: BlockWorld
   readonly profile: BlockExplosionProfile
 }
@@ -33,8 +33,8 @@ const explosionReader = (
     ),
   )
 
-export const planBlockWorldExplosion = <S>(
-  request: BlockWorldExplosionRequest<S>,
+export const planBlockWorldExplosion = (
+  request: BlockWorldExplosionRequest,
 ): ExplosionPlan => {
   const { profile, world, ...explosionRequest } = request
   return planExplosion({
@@ -58,8 +58,8 @@ export type BlockWorldExplosionResult = {
   readonly world: BlockWorld
 }
 
-export const explodeBlockWorld = <S>(
-  request: BlockWorldExplosionRequest<S>,
+export const explodeBlockWorld = (
+  request: BlockWorldExplosionRequest,
 ): BlockWorldExplosionResult => {
   const plan = planBlockWorldExplosion(request)
   return {
@@ -68,13 +68,13 @@ export const explodeBlockWorld = <S>(
   }
 }
 
-export type BlockWorldPrimedTntRequest<S> = Omit<PrimedTntRequest<S>, 'blocks'> & {
+export type BlockWorldPrimedTntRequest = Omit<PrimedTntRequest, 'blocks'> & {
   readonly world: BlockWorld
   readonly profile: BlockExplosionProfile
 }
 
-export const planBlockWorldPrimedTnt = <S>(
-  request: BlockWorldPrimedTntRequest<S>,
+export const planBlockWorldPrimedTnt = (
+  request: BlockWorldPrimedTntRequest,
 ): PrimedTntPlan => {
   const { profile, world, ...tntRequest } = request
   return planPrimedTnt({
@@ -98,8 +98,8 @@ export type BlockWorldPrimedTntResult = {
   readonly world: BlockWorld
 }
 
-export const advancePrimedTntInBlockWorld = <S>(
-  request: BlockWorldPrimedTntRequest<S>,
+export const advancePrimedTntInBlockWorld = (
+  request: BlockWorldPrimedTntRequest,
 ): BlockWorldPrimedTntResult => {
   const plan = planBlockWorldPrimedTnt(request)
   return {

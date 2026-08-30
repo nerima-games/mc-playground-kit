@@ -25,6 +25,49 @@ export * from '@nerima-games/mc-kernel'
 export { isEmpty } from '@nerima-games/mc-sim'
 export { isEmpty as isEmptyBlockState } from '@nerima-games/mc-kernel'
 export * from '@nerima-games/mc-sim'
+// The mc-sim barrel also re-exports the kernel anvil vocabulary.
+// Explicit re-exports below pick the owner, mc-kernel.
+export type {
+  AnvilApplyResult,
+  AnvilCustomName,
+  AnvilDurability,
+  AnvilEnchantment,
+  AnvilEnchantmentId,
+  AnvilEnchantmentRule,
+  AnvilInputStack,
+  AnvilItemPayload,
+  AnvilPlan,
+  AnvilRejectionReason,
+  AnvilRepairMaterialRule,
+  AnvilRuleSet,
+  AnvilSnapshot,
+  AnvilSnapshotEncodingResult,
+  AnvilSnapshotResult,
+  AnvilSnapshotString,
+  AnvilState,
+  AnvilValidationIssue,
+  CanonicalAnvilItemPayload,
+  CanonicalAnvilState,
+} from '@nerima-games/mc-kernel'
+export {
+  ANVIL_MAX_CUSTOM_NAME_LENGTH,
+  ANVIL_REPAIR_BONUS_RATIO,
+  ANVIL_SNAPSHOT_VERSION,
+  ANVIL_TOO_EXPENSIVE_LEVEL,
+  applyAnvil,
+  decodeAnvilSnapshot,
+  decodeAnvilSnapshotString,
+  encodeAnvilSnapshot,
+  isAnvilCustomName,
+  isAnvilEnchantmentId,
+  isAnvilSnapshotString,
+  nextAnvilRepairCost,
+  planAnvil,
+  snapshotAnvilState,
+} from '@nerima-games/mc-kernel'
+// Kit-owned interaction helpers shadow the same-named mc-sim re-exports.
+export { breakBlock } from './domain/block-breaking.js'
+export { placeBlock } from './domain/block-placement.js'
 export * as physics from '@nerima-games/mc-physics'
 export * as save from '@nerima-games/mc-save'
 export * as worldgen from '@nerima-games/mc-worldgen'

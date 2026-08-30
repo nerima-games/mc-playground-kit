@@ -122,7 +122,7 @@ const requiredExports = [
   "makeInventoryService",
   "makeSimStages",
   "makeSimStagesForPreview",
-  "makeSimStagesForPreviewWithPhysics",
+  "makeControllableSimStagesWithPhysics",
   "makeSimStagesWithPhysics",
   "launchPlayground",
   "makeBrowserPreview",

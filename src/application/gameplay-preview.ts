@@ -23,7 +23,7 @@ import {
   type SimInputPort,
   type SimPhysicsConfig,
   type TimeService,
-  makeSimStagesForPreviewWithPhysics,
+  makeControllableSimStagesWithPhysics,
 } from '@nerima-games/mc-sim'
 import { Effect, Ref } from 'effect'
 import {
@@ -194,7 +194,7 @@ export const makeGameplayPreview = (
     const mechanics = yield* Ref.make(worldMechanicsStateFromWorld(world))
     const runtimeBase = yield* Ref.make(world)
     let activeWorld = world
-    const simulation = yield* makeSimStagesForPreviewWithPhysics(
+    const simulation = yield* makeControllableSimStagesWithPhysics(
       gameplayPhysicsConfigFor((position) => blockAt(activeWorld, position)),
     )
     const mechanicsStage = makeWorldMechanicsStage(mechanics, {
