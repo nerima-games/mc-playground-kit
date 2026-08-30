@@ -4,8 +4,10 @@
 allowBuilds:
   esbuild: true
 minimumReleaseAgeExclude:
-  - '@nerima-games/mc-kernel@0.2.8 || 0.4.0'
+  - '@nerima-games/mc-kernel@0.2.8 || 0.4.0 || 0.5.0'
   - '@nerima-games/mc-sim@0.1.24'
+  - '@nerima-games/mc-physics@0.2.1'
+  - '@nerima-games/mc-save@0.3.0'
 overrides:
   # GHSA-2v37-7h3g-55p8: transitive nanoid pulled in via vitest/@vitest/coverage-v8
   # -> vite -> postcss can loop indefinitely when a custom generator size is 0.
