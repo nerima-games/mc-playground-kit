@@ -1,3 +1,4 @@
+import { BlockId, lightEmissionOfBlockId } from '@nerima-games/mc-kernel'
 import { describe, expect, it } from 'vitest'
 import { worldgen } from '../src/index'
 
@@ -28,7 +29,7 @@ describe('public worldgen namespace', () => {
       blocks: worldgen.emptyBlocks(),
       biomes,
     }
-    const torch = worldgen.BlockId(14)
+    const torch = BlockId(14)
 
     worldgen.setBlockAt(left.blocks, worldgen.CHUNK_SIZE_XZ - 1, 100, 1, torch)
 
@@ -50,7 +51,7 @@ describe('public worldgen namespace', () => {
     const sourceIndex = worldgen.blockIndex(worldgen.CHUNK_SIZE_XZ - 1, 100, 1)
     const seamIndex = worldgen.blockIndex(0, 100, 1)
     expect(worldgen.getLightAt(leftLight.block, sourceIndex)).toBe(
-      worldgen.lightEmissionOfBlockId(torch),
+      lightEmissionOfBlockId(torch),
     )
     expect(worldgen.getLightAt(rightLight.block, seamIndex)).toBeGreaterThan(0)
   })
