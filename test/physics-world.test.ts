@@ -54,9 +54,9 @@ describe('block physics options', () => {
     expect(physics.halfWidth).toBe(0.3)
     expect(physics.halfHeight).toBe(halfHeight)
     expect(physics.stepHeight).toBe(0.6)
-    expect(physics.isBlockSolid(4, 8, -2)).toBe(true)
-    expect(physics.isBlockSolid(7, 8, -2)).toBe(false)
-    expect(physics.isBlockSolid(8, 8, -2)).toBe(false)
+    expect(physics.blockPropertiesAt(4, 8, -2)?.collisionShape).toBe('full')
+    expect(physics.blockPropertiesAt(7, 8, -2)?.collisionShape).toBe('none')
+    expect(physics.blockPropertiesAt(8, 8, -2)).toBeNull()
     expect(physics.blockShapeAt?.(4, 8, -2)).toEqual(shape(0, 0, 0, 1, 1, 1))
     expect(physics.blockShapeAt?.(5, 8, -2)).toEqual(shape(0, 0, 0, 1, 0.5, 1))
     expect(physics.blockShapeAt?.(6, 8, -2)).toEqual(
@@ -71,7 +71,7 @@ describe('block physics options', () => {
     const physics = options(blockReaderOf(world))
 
     expect(physics.blockShapeAt?.(-3, 2, 5)).toEqual(shape(0, 0, 0, 1, 1, 1))
-    expect(physics.isBlockSolid(-2, 2, 5)).toBe(false)
+    expect(physics.blockPropertiesAt(-2, 2, 5)).toBeNull()
     expect(readBlockAt(world, blockPosition(-3, 2, 5))).toBe(stone)
   })
 
@@ -83,7 +83,7 @@ describe('block physics options', () => {
     )
     const physics = options(world)
 
-    expect(physics.isBlockSolid(0, 0, 0)).toBe(false)
+    expect(physics.blockPropertiesAt(0, 0, 0)).toBeNull()
     expect(physics.blockShapeAt?.(0, 0, 0)).toBeNull()
   })
 

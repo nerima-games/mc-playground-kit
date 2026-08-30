@@ -2,6 +2,7 @@ import {
   AIR_BLOCK_ID,
   type BlockId,
   type BlockPositionKey,
+  type StageId,
   type StageRegistration,
   StageId as makeStageId,
 } from '@nerima-games/mc-kernel'
@@ -22,7 +23,7 @@ import {
   type SimInputPort,
   type SimPhysicsConfig,
   type TimeService,
-  makeSimStagesForPreviewWithPhysics,
+  makeControllableSimStagesWithPhysics,
 } from '@nerima-games/mc-sim'
 import { Effect, Ref } from 'effect'
 import {
@@ -41,9 +42,9 @@ import { type WorldRuntimeSnapshotError } from './world-runtime-snapshot.js'
 import { resolveOptionsForBlockSource } from '../domain/physics-world.js'
 
 /** The stage that advances local fluid and redstone state. */
-export const GAMEPLAY_STAGE_IDS = {
+export const GAMEPLAY_STAGE_IDS: { readonly worldMechanics: StageId } = {
   worldMechanics: makeStageId('playground:world-mechanics'),
-} as const
+}
 
 export const DEFAULT_GAMEPLAY_WORLD_MECHANICS_STAGE_OPTIONS: WorldMechanicsStageOptions = {
   after: [SIM_STAGE_IDS.physics],
@@ -193,7 +194,7 @@ export const makeGameplayPreview = (
     const mechanics = yield* Ref.make(worldMechanicsStateFromWorld(world))
     const runtimeBase = yield* Ref.make(world)
     let activeWorld = world
-    const simulation = yield* makeSimStagesForPreviewWithPhysics(
+    const simulation = yield* makeControllableSimStagesWithPhysics(
       gameplayPhysicsConfigFor((position) => blockAt(activeWorld, position)),
     )
     const mechanicsStage = makeWorldMechanicsStage(mechanics, {

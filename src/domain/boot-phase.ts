@@ -65,7 +65,7 @@ const DISPLAY_DECIMAL_PLACES = 1
  */
 export type DurationMillis = number & Brand.Brand<'DurationMillis'>
 
-export const DurationMillis = Brand.refined<DurationMillis>(
+export const DurationMillis: Brand.Brand.Constructor<DurationMillis> = Brand.refined<DurationMillis>(
   (value) => Number.isFinite(value) && value >= ZERO_DURATION_MILLIS,
   (value) => Brand.error(`DurationMillis must be a finite, non-negative number of milliseconds, received ${value}`),
 )

@@ -1,9 +1,15 @@
 {
-  description = "Effect-based development preview lifecycle for a voxel game toolkit";
+  description = "Effect-based lifecycle and preview boundaries for the nerima-games Minecraft packages.";
 
   inputs = {
     # nixos-unstable, not nixpkgs-unstable: it advances only after the NixOS
     # release tests pass, so it is less likely to land a broken build.
+    #
+    # Locked below to a specific revision rather than left to float:
+    # nixos-unstable's oxlint >=1.79.0 misfires `no-redeclare` on the
+    # `type X = ... & Brand` + `const X = Brand.refined(...)` idiom used across
+    # the org's branded-primitive types (A/B-proven against 1.75.0, which is
+    # clean). Re-check whether this is still needed on the next nixpkgs bump.
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
   };
 
@@ -32,20 +38,21 @@
           # the `packageManager` field in package.json — one source of truth
           # instead of two that can drift.
           #
-          # oxlint is intentionally provided by the development shell rather
-          # than added to the published package dependency graph.
+          # oxlint and ast-grep are intentionally provided by the development
+          # shell rather than added to the published package dependency graph.
           default = pkgs.mkShell {
             packages = [
               pkgs.nodejs_24
               pkgs.corepack_24
               pkgs.typescript-language-server
               pkgs.oxlint
+              pkgs.ast-grep
             ];
 
             shellHook = ''
-              mkdir -p "$PWD/.corepack"
-              corepack enable --install-directory "$PWD/.corepack"
-              export PATH="$PWD/.corepack:$PATH"
+              corepackDir="$(mktemp -d "''${TMPDIR:-/tmp}/mc-playground-kit-corepack.XXXXXX")"
+              corepack enable --install-directory "$corepackDir"
+              export PATH="$corepackDir:$PATH"
             '';
           };
         }

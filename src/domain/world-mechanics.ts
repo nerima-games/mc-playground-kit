@@ -34,8 +34,8 @@ export type WorldMechanicsAdvance = {
 
 export const worldMechanicsStateFromWorld = (
   world: BlockWorld,
-  fluids = fluidStateFromWorld(world),
-  redstone = emptyRedstoneState(),
+  fluids: FluidState = fluidStateFromWorld(world),
+  redstone: RedstoneState = emptyRedstoneState(),
 ): WorldMechanicsState => ({
   fluids,
   redstone,

@@ -38,9 +38,9 @@ describe('gameplay preview', () => {
     let world = emptyBlockWorld()
     const config = gameplayPhysicsConfigFor((point) => blockAt(world, point))
 
-    expect(config.resolve.isBlockSolid(0, 0, 0)).toBe(false)
+    expect(config.resolve.blockPropertiesAt(0, 0, 0)).toBeNull()
     world = setBlockAt(world, at(0), blockIdOf('stone'))
-    expect(config.resolve.isBlockSolid(0, 0, 0)).toBe(true)
+    expect(config.resolve.blockPropertiesAt(0, 0, 0)?.collisionShape).toBe('full')
   })
 
   it.effect('composes mc-sim and local mechanics into one deterministic frame boundary', () =>

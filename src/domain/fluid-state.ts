@@ -12,7 +12,7 @@ import { Brand } from 'effect'
 
 export type FluidLevel = number & Brand.Brand<'FluidLevel'>
 
-export const fluidLevel = Brand.refined<FluidLevel>(
+export const fluidLevel: Brand.Brand.Constructor<FluidLevel> = Brand.refined<FluidLevel>(
   (value) => Number.isInteger(value) && value >= FLUID_LEVEL_MIN && value <= FLUID_LEVEL_MAX,
   (value) => Brand.error(`Fluid level must be an integer between ${FLUID_LEVEL_MIN} and ${FLUID_LEVEL_MAX}, received ${value}`),
 )

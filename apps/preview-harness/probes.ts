@@ -13,6 +13,7 @@ import {
   InputPort,
   RendererPort,
   SimulationPort,
+  type WorldProviderError,
   WorldProviderPort,
 } from '../../src/application/preview-ports'
 import {
@@ -397,7 +398,7 @@ const FOOTER: ReadonlyArray<string> = [
   '   fixtures in apps/preview-harness/harness.ts are the shape they have to satisfy.',
 ]
 
-export const statsReport = Effect.gen(function* () {
+export const statsReport: Effect.Effect<ReadonlyArray<string>, WorldProviderError, never> = Effect.gen(function* () {
   return [
     ...HEADER,
     ...(yield* staleStopProbe),

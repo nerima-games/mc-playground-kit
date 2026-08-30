@@ -307,4 +307,4 @@ export const wirePowerChanges = (
   return changes
 }
 
-export const blockIsWire = isWire
+export const blockIsWire: (world: BlockWorld, position: BlockPosition) => boolean = isWire

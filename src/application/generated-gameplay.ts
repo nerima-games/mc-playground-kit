@@ -1,3 +1,4 @@
+import { Cause, Data, Effect, Option, Ref } from 'effect'
 import { ClockPort, type ClockService } from '@nerima-games/mc-kernel'
 import {
   type CropService,
@@ -13,7 +14,6 @@ import {
   emptyInventory,
   itemStack,
 } from '@nerima-games/mc-sim'
-import { Data, Effect, Option, Ref } from 'effect'
 import {
   type GameplayPreview,
   makeGameplayPreviewFromWorldRuntime,
@@ -46,19 +46,31 @@ import type { Dimension } from '@nerima-games/mc-worldgen'
 import type { WorldMechanicsState } from '../domain/world-mechanics.js'
 import type { WorldRuntimeSnapshotError } from './world-runtime-snapshot.js'
 
-// oxlint-disable-next-line new-cap -- Effect exposes TaggedError as a factory with a constructor-shaped name.
-export class InvalidSpawnKitError extends Data.TaggedError('InvalidSpawnKitError')<{
+type InvalidSpawnKitErrorFields = {
   readonly message: string
   readonly slotIndex: number
-}> {}
+}
+// TypeScript's `isolatedDeclarations` cannot infer through `extends Data.TaggedError(...)<...>()`, an instantiation expression; hoisting it into an explicitly typed const (same pattern as mc-kernel's ClockPort in src/domain/clock.ts) gives the extends clause a plain identifier.
+const InvalidSpawnKitErrorBase: new (
+  args: InvalidSpawnKitErrorFields,
+) => Cause.YieldableError & { readonly _tag: 'InvalidSpawnKitError' } & Readonly<InvalidSpawnKitErrorFields> =
+  // oxlint-disable-next-line new-cap -- Effect exposes TaggedError as a factory with a constructor-shaped name.
+  Data.TaggedError('InvalidSpawnKitError')<InvalidSpawnKitErrorFields>
+export class InvalidSpawnKitError extends InvalidSpawnKitErrorBase {}
 
-// oxlint-disable-next-line new-cap -- Effect exposes TaggedError as a factory with a constructor-shaped name.
-export class GeneratedGameplayWorldUnavailableError extends Data.TaggedError(
-  'GeneratedGameplayWorldUnavailableError',
-)<{
+type GeneratedGameplayWorldUnavailableErrorFields = {
   readonly message: string
   readonly worldId: string
-}> {}
+}
+// TypeScript's `isolatedDeclarations` cannot infer through `extends Data.TaggedError(...)<...>()`, an instantiation expression; hoisting it into an explicitly typed const (same pattern as mc-kernel's ClockPort in src/domain/clock.ts) gives the extends clause a plain identifier.
+const GeneratedGameplayWorldUnavailableErrorBase: new (
+  args: GeneratedGameplayWorldUnavailableErrorFields,
+) => Cause.YieldableError & {
+  readonly _tag: 'GeneratedGameplayWorldUnavailableError'
+} & Readonly<GeneratedGameplayWorldUnavailableErrorFields> =
+  // oxlint-disable-next-line new-cap -- Effect exposes TaggedError as a factory with a constructor-shaped name.
+  Data.TaggedError('GeneratedGameplayWorldUnavailableError')<GeneratedGameplayWorldUnavailableErrorFields>
+export class GeneratedGameplayWorldUnavailableError extends GeneratedGameplayWorldUnavailableErrorBase {}
 
 export type GeneratedGameplayError =
   | GeneratedGameplayWorldUnavailableError

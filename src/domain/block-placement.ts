@@ -2,19 +2,24 @@ import {
   AIR_BLOCK_ID,
   type BlockId,
   type BlockPosition,
-  type ItemType,
-  type PlaceableItemType,
-  blockIdOf,
-  blockOfPlaceableItem,
   blockPosition,
   canBlockStaySupported,
   capabilityOfBlockId,
   isKnownBlockId,
-  isPlaceableItem,
 } from '@nerima-games/mc-kernel'
-import { type PlayerStorage, removeItemAt, slotAt, withInventory } from '@nerima-games/mc-sim'
+import {
+  type PlayerStorage,
+  placeableBlockFromItem,
+  removeItemAt,
+  slotAt,
+  withInventory,
+} from '@nerima-games/mc-sim'
 import { blockAt, setBlockAt } from './block-world.js'
 import { type BlockInteractionState } from './block-interaction-state.js'
+
+// The mc-sim inventory owns the slots this file reads, so its item vocabulary
+// (not the older kernel pin's) is the type that matches the runtime values.
+type ItemType = typeof placeableBlockFromItem extends (item: infer I) => unknown ? I : never
 
 export type PlaceBlockRequest = {
   readonly position: BlockPosition
@@ -104,7 +109,8 @@ type ItemSelection =
     }
   | {
       readonly _tag: 'selected'
-      readonly item: PlaceableItemType
+      readonly blockId: BlockId
+      readonly item: ItemType
     }
 
 const selectItem = (state: BlockInteractionState, request: PlaceBlockRequest): ItemSelection => {
@@ -120,7 +126,8 @@ const selectItem = (state: BlockInteractionState, request: PlaceBlockRequest): I
     }
   }
 
-  if (!isPlaceableItem(selected.item)) {
+  const placeable = placeableBlockFromItem(selected.item)
+  if (!placeable) {
     return {
       _tag: 'rejected',
       rejection: {
@@ -132,7 +139,7 @@ const selectItem = (state: BlockInteractionState, request: PlaceBlockRequest): I
     }
   }
 
-  return { _tag: 'selected', item: selected.item }
+  return { _tag: 'selected', blockId: placeable.id, item: selected.item }
 }
 
 const isSupportedPlacement = (
@@ -166,7 +173,7 @@ const selectPlacement = (
     return selected
   }
 
-  const blockId = blockIdOf(blockOfPlaceableItem(selected.item))
+  const { blockId } = selected
   if (!isSupportedPlacement(state, request.position, blockId)) {
     return {
       _tag: 'rejected',

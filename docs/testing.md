@@ -8,14 +8,16 @@ Run the commands from nix develop:
 pnpm typecheck
 pnpm lint
 pnpm test:coverage
-pnpm build
-pnpm test:package
+pnpm package:verify
 ~~~
 
-The CI-equivalent aggregate is pnpm verify. It runs typechecking, linting,
-coverage-enabled tests, the package build, and a runtime import smoke test. The
-package build emits declaration and JavaScript output into dist; that directory
-is a build artifact and is not source-controlled.
+pnpm verify is the local aggregate; it runs typechecking, linting, and the
+(non-coverage) test suite. Coverage, the package build, and the packed-archive
+runtime smoke test are separate CI steps (pnpm test:coverage and
+pnpm package:verify), so a passing pnpm verify does not by itself prove the
+package builds or that the packed archive still imports cleanly. The package
+build emits declaration and JavaScript output into dist; that directory is a
+build artifact and is not source-controlled.
 
 ## Test layers
 

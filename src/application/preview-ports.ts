@@ -52,7 +52,7 @@
  * standing two previews side by side in one process actually needs.
  */
 import type { CameraPoseSnapshot, DeltaTimeSecs } from '@nerima-games/mc-kernel'
-import { Context, Data, Effect } from 'effect'
+import { Cause, Context, Data, Effect } from 'effect'
 import type { FlatWorldSpec, SpawnKit } from '../domain/launch-options.js'
 import type { ChunkPersistenceError } from '@nerima-games/mc-worldgen'
 
@@ -60,12 +60,18 @@ import type { ChunkPersistenceError } from '@nerima-games/mc-worldgen'
 // Ports for mc-worldgen
 // ---------------------------------------------------------------------------
 
-// oxlint-disable-next-line new-cap -- Effect exposes TaggedError as a factory with a constructor-shaped name.
-export class InvalidWorldSpecError extends Data.TaggedError('InvalidWorldSpecError')<{
+type InvalidWorldSpecErrorFields = {
   readonly field: 'worldId' | 'seed' | 'generation' | 'surfaceY' | 'radiusChunks'
   readonly value: unknown
   readonly message: string
-}> {}
+}
+// TypeScript's `isolatedDeclarations` cannot infer through `extends Data.TaggedError(...)<...>()`, an instantiation expression; hoisting it into an explicitly typed const (same pattern as mc-kernel's ClockPort in src/domain/clock.ts) gives the extends clause a plain identifier.
+const InvalidWorldSpecErrorBase: new (
+  args: InvalidWorldSpecErrorFields,
+) => Cause.YieldableError & { readonly _tag: 'InvalidWorldSpecError' } & Readonly<InvalidWorldSpecErrorFields> =
+  // oxlint-disable-next-line new-cap -- Effect exposes TaggedError as a factory with a constructor-shaped name.
+  Data.TaggedError('InvalidWorldSpecError')<InvalidWorldSpecErrorFields>
+export class InvalidWorldSpecError extends InvalidWorldSpecErrorBase {}
 
 export type WorldProviderError = InvalidWorldSpecError | ChunkPersistenceError
 
@@ -84,10 +90,12 @@ export type WorldProviderService = {
   readonly closeWorld: Effect.Effect<void, WorldProviderError>
 }
 
-export class WorldProviderPort extends Context.Tag('@nerima-games/mc-playground-kit/WorldProviderPort')<
+const WorldProviderPortBase: Context.TagClass<
   WorldProviderPort,
+  '@nerima-games/mc-playground-kit/WorldProviderPort',
   WorldProviderService
->() {}
+> = Context.Tag('@nerima-games/mc-playground-kit/WorldProviderPort')<WorldProviderPort, WorldProviderService>()
+export class WorldProviderPort extends WorldProviderPortBase {}
 
 // ---------------------------------------------------------------------------
 // Ports for mc-sim
@@ -116,10 +124,12 @@ export type SimulationService = {
   readonly stop: Effect.Effect<void>
 }
 
-export class SimulationPort extends Context.Tag('@nerima-games/mc-playground-kit/SimulationPort')<
+const SimulationPortBase: Context.TagClass<
   SimulationPort,
+  '@nerima-games/mc-playground-kit/SimulationPort',
   SimulationService
->() {}
+> = Context.Tag('@nerima-games/mc-playground-kit/SimulationPort')<SimulationPort, SimulationService>()
+export class SimulationPort extends SimulationPortBase {}
 
 // ---------------------------------------------------------------------------
 // Ports for mc-render (1 of 2): drawing
@@ -141,10 +151,12 @@ export type RendererService = {
   readonly detach: Effect.Effect<void>
 }
 
-export class RendererPort extends Context.Tag('@nerima-games/mc-playground-kit/RendererPort')<
+const RendererPortBase: Context.TagClass<
   RendererPort,
+  '@nerima-games/mc-playground-kit/RendererPort',
   RendererService
->() {}
+> = Context.Tag('@nerima-games/mc-playground-kit/RendererPort')<RendererPort, RendererService>()
+export class RendererPort extends RendererPortBase {}
 
 // ---------------------------------------------------------------------------
 // Ports for mc-render (2 of 2): runtime input — OWNED BY mc-render, see the module header
@@ -177,10 +189,12 @@ export type PreviewInputService = {
   readonly detach: Effect.Effect<void>
 }
 
-export class InputPort extends Context.Tag('@nerima-games/mc-playground-kit/InputPort')<
+const InputPortBase: Context.TagClass<
   InputPort,
+  '@nerima-games/mc-playground-kit/InputPort',
   PreviewInputService
->() {}
+> = Context.Tag('@nerima-games/mc-playground-kit/InputPort')<InputPort, PreviewInputService>()
+export class InputPort extends InputPortBase {}
 
 /**
  * Everything a playground must be given.

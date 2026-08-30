@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@effect/vitest'
-import { blockIdOf, WorldId as makeWorldId } from '@nerima-games/mc-kernel'
+import { BlockId, blockIdOf, blockPosition, WorldId as makeWorldId } from '@nerima-games/mc-kernel'
 import {
   InMemoryStorageLayer,
   StorageError,
@@ -8,7 +8,7 @@ import {
   makeInMemoryStorage,
   type StorageService,
 } from '@nerima-games/mc-save'
-import { BlockId, blockIndex, blockPosition, CHUNK_HEIGHT, chunkCoord, generateChunkAt } from '@nerima-games/mc-worldgen'
+import { blockIndex, CHUNK_HEIGHT, chunkCoord, generateChunkAt } from '@nerima-games/mc-worldgen'
 import { Effect, Layer, Option, Ref } from 'effect'
 import { DEFAULT_FLAT_WORLD, type FlatWorldSpec } from '../src/domain/launch-options'
 import {

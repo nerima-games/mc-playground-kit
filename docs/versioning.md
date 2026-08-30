@@ -52,7 +52,12 @@ package dependency metadata before changing the pins.
 ## Publishing
 
 package.json controls the registry and access policy. The published payload is
-limited to dist, LICENSE, and README.md. Before publishing, run
-nix develop --command pnpm verify, inspect `pnpm pack --dry-run --json`, and
-confirm that the generated runtime bundle has no checkout-relative TypeScript
-imports.
+limited to dist, LICENSE, and README.md. Publishing happens through the
+release.yaml GitHub Actions workflow, which re-runs
+`nix develop --command pnpm verify` and `nix develop --command pnpm package:verify`
+against the version-bumped commit before running `pnpm publish --no-git-checks`,
+then tags the published commit `v<version>`. Locally, run
+nix develop --command pnpm prepublishOnly (typecheck, lint, test, build, and the
+packed-archive runtime smoke test) before proposing a version bump, and inspect
+`pnpm pack --dry-run --json` to confirm the generated runtime bundle has no
+checkout-relative TypeScript imports.

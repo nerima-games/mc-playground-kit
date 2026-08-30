@@ -1,5 +1,6 @@
 import { Effect, Ref } from 'effect'
 import {
+  type StageId,
   type StageRegistration,
   StageId as makeStageId,
 } from '@nerima-games/mc-kernel'
@@ -12,7 +13,7 @@ import {
 import { type BlockWorld } from './block-world.js'
 import { type PreviewModule } from './launch-options.js'
 
-export const DEFAULT_WORLD_MECHANICS_STAGE_ID = makeStageId('world:mechanics')
+export const DEFAULT_WORLD_MECHANICS_STAGE_ID: StageId = makeStageId('world:mechanics')
 
 export type WorldMechanicsPreview = {
   readonly module: PreviewModule
