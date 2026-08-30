@@ -1,6 +1,6 @@
 import { defineConfig } from 'vitest/config'
 
-export default defineConfig({
+const config: ReturnType<typeof defineConfig> = defineConfig({
   test: {
     environment: 'node',
     globals: false,
@@ -22,13 +22,17 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       enabled: false,
-      include: ['src/index.ts', 'src/domain/**/*.ts', 'src/application/**/*.ts'],
+      include: ['src/**/*.ts'],
       exclude: [
         '**/*.d.ts',
         '**/*.config.ts',
         '**/*.test.ts',
         '**/*.spec.ts',
-        'src/domain/**/*-types.ts',
+        // PURE_TYPE: declarations only, zero executable statements. v8 reports
+        // such a file as 0% rather than 100%, which would make the headline
+        // number meaningless. Its contracts are enforced by `pnpm typecheck`
+        // and exercised indirectly through test/redstone.test.ts.
+        'src/domain/redstone-update-types.ts',
       ],
       reporter: ['text', 'json', 'html', 'lcov'],
       reportsDirectory: './coverage',
@@ -44,3 +48,5 @@ export default defineConfig({
     platform: 'node',
   },
 })
+
+export default config

@@ -143,7 +143,7 @@ const worldWithChunks = (
   minY: world.minY,
 })
 
-export const emptyChunkWorld = (height: number, minY = DEFAULT_WORLD_MIN_Y): ChunkWorld => {
+export const emptyChunkWorld = (height: number, minY: number = DEFAULT_WORLD_MIN_Y): ChunkWorld => {
   assertWorldBounds(height, minY)
   return { chunks: new Map(), height, minY }
 }

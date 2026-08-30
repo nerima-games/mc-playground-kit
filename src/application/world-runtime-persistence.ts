@@ -5,7 +5,7 @@ import {
   type BlockPositionKey,
   blockPositionOfKey,
 } from '@nerima-games/mc-kernel'
-import { Data, Effect } from 'effect'
+import { Cause, Data, Effect } from 'effect'
 import type { BlockWorld } from '../domain/block-world.js'
 import type { WorldRuntime } from './generated-world-provider.js'
 
@@ -14,15 +14,19 @@ export type WorldRuntimePersistenceResult = {
   readonly written: number
 }
 
-// oxlint-disable-next-line new-cap -- Effect exposes TaggedError as a factory with a constructor-shaped name.
-export class WorldRuntimePersistenceError extends Data.TaggedError(
-  'WorldRuntimePersistenceError',
-)<{
+type WorldRuntimePersistenceErrorFields = {
   readonly block: BlockId
   readonly message: string
   readonly outcome: 'ChunkNotLoaded' | 'OutOfWorld'
   readonly position: BlockPosition
-}> {}
+}
+// TypeScript's `isolatedDeclarations` cannot infer through `extends Data.TaggedError(...)<...>()`, an instantiation expression; hoisting it into an explicitly typed const (same pattern as mc-kernel's ClockPort in src/domain/clock.ts) gives the extends clause a plain identifier.
+const WorldRuntimePersistenceErrorBase: new (
+  args: WorldRuntimePersistenceErrorFields,
+) => Cause.YieldableError & { readonly _tag: 'WorldRuntimePersistenceError' } & Readonly<WorldRuntimePersistenceErrorFields> =
+  // oxlint-disable-next-line new-cap -- Effect exposes TaggedError as a factory with a constructor-shaped name.
+  Data.TaggedError('WorldRuntimePersistenceError')<WorldRuntimePersistenceErrorFields>
+export class WorldRuntimePersistenceError extends WorldRuntimePersistenceErrorBase {}
 
 type BlockChange = readonly [position: BlockPosition, block: BlockId]
 type WriteCounts = WorldRuntimePersistenceResult

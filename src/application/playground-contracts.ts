@@ -44,10 +44,10 @@ export type PlaygroundApi = {
   readonly stop: Effect.Effect<void>
 }
 
-export class Playground extends Context.Tag('@nerima-games/mc-playground-kit/Playground')<
-  Playground,
-  PlaygroundApi
->() {}
+// TypeScript's `isolatedDeclarations` cannot infer through `extends Context.Tag(...)<...>()`, an instantiation expression; hoisting it into an explicitly typed const (same pattern as mc-kernel's ClockPort in src/domain/clock.ts) gives the extends clause a plain identifier.
+const PlaygroundBase: Context.TagClass<Playground, '@nerima-games/mc-playground-kit/Playground', PlaygroundApi> =
+  Context.Tag('@nerima-games/mc-playground-kit/Playground')<Playground, PlaygroundApi>()
+export class Playground extends PlaygroundBase {}
 
 export type Generation = {
   readonly loop: GameLoopApi

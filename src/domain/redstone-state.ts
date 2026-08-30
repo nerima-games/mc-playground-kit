@@ -23,7 +23,7 @@ export type RedstoneDeviceStateUpdate = {
   readonly repeaterTimers: ReadonlyMap<BlockPositionKey, RedstoneRepeaterTimer>
 }
 
-export const redstonePower = Brand.refined<RedstonePower>(
+export const redstonePower: Brand.Brand.Constructor<RedstonePower> = Brand.refined<RedstonePower>(
   (value) => Number.isInteger(value) && value >= REDSTONE_POWER_MIN && value <= REDSTONE_POWER_MAX,
   (value) => Brand.error(`Redstone power must be an integer between ${REDSTONE_POWER_MIN} and ${REDSTONE_POWER_MAX}, received ${value}`),
 )

@@ -4,12 +4,12 @@ import {
   type Chunk as GeneratedChunk,
   type ChunkCoord as GeneratedChunkCoord,
 } from '@nerima-games/mc-worldgen'
+import { Cause, Data, Effect } from 'effect'
 import {
   type ChunkWorld,
   emptyChunkWorld,
   storeChunkInChunkWorld,
 } from '../domain/chunk-world.js'
-import { Data, Effect } from 'effect'
 import { type Chunk as KernelChunk, chunkCoord, chunk as kernelChunk } from '@nerima-games/mc-kernel'
 
 export type WorldRuntimeSnapshotReason =
@@ -17,12 +17,18 @@ export type WorldRuntimeSnapshotReason =
   | 'loaded-set-changed'
   | 'invalid-chunk'
 
-// oxlint-disable-next-line new-cap -- Effect exposes TaggedError as a factory with a constructor-shaped name.
-export class WorldRuntimeSnapshotError extends Data.TaggedError('WorldRuntimeSnapshotError')<{
+type WorldRuntimeSnapshotErrorFields = {
   readonly reason: WorldRuntimeSnapshotReason
   readonly cx?: number
   readonly cz?: number
-}> {}
+}
+// TypeScript's `isolatedDeclarations` cannot infer through `extends Data.TaggedError(...)<...>()`, an instantiation expression; hoisting it into an explicitly typed const (same pattern as mc-kernel's ClockPort in src/domain/clock.ts) gives the extends clause a plain identifier.
+const WorldRuntimeSnapshotErrorBase: new (
+  args: WorldRuntimeSnapshotErrorFields,
+) => Cause.YieldableError & { readonly _tag: 'WorldRuntimeSnapshotError' } & Readonly<WorldRuntimeSnapshotErrorFields> =
+  // oxlint-disable-next-line new-cap -- Effect exposes TaggedError as a factory with a constructor-shaped name.
+  Data.TaggedError('WorldRuntimeSnapshotError')<WorldRuntimeSnapshotErrorFields>
+export class WorldRuntimeSnapshotError extends WorldRuntimeSnapshotErrorBase {}
 
 const coordKeyOf = (coord: { readonly cx: number; readonly cz: number }): string =>
   `${String(coord.cx)},${String(coord.cz)}`

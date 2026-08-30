@@ -1,5 +1,12 @@
+# esbuild is no longer a direct devDependency (the tsc-emit build replaced the
+# esbuild bundle step); it remains a transitive dependency of vitest/tsx, which
+# need its native binary built to run at all.
 allowBuilds:
   esbuild: true
 minimumReleaseAgeExclude:
   - '@nerima-games/mc-kernel@0.2.8 || 0.4.0'
   - '@nerima-games/mc-sim@0.1.24'
+overrides:
+  # GHSA-2v37-7h3g-55p8: transitive nanoid pulled in via vitest/@vitest/coverage-v8
+  # -> vite -> postcss can loop indefinitely when a custom generator size is 0.
+  nanoid: '>=3.3.18'

@@ -2,6 +2,7 @@ import {
   AIR_BLOCK_ID,
   type BlockId,
   type BlockPositionKey,
+  type StageId,
   type StageRegistration,
   StageId as makeStageId,
 } from '@nerima-games/mc-kernel'
@@ -41,9 +42,9 @@ import { type WorldRuntimeSnapshotError } from './world-runtime-snapshot.js'
 import { resolveOptionsForBlockSource } from '../domain/physics-world.js'
 
 /** The stage that advances local fluid and redstone state. */
-export const GAMEPLAY_STAGE_IDS = {
+export const GAMEPLAY_STAGE_IDS: { readonly worldMechanics: StageId } = {
   worldMechanics: makeStageId('playground:world-mechanics'),
-} as const
+}
 
 export const DEFAULT_GAMEPLAY_WORLD_MECHANICS_STAGE_OPTIONS: WorldMechanicsStageOptions = {
   after: [SIM_STAGE_IDS.physics],

@@ -46,10 +46,13 @@ export type WorldRuntimeService = {
   readonly current: Effect.Effect<Option.Option<WorldRuntime>>
 }
 
-export class WorldRuntimePort extends Context.Tag('@nerima-games/mc-playground-kit/WorldRuntimePort')<
+// TypeScript's `isolatedDeclarations` cannot infer through `extends Context.Tag(...)<...>()`, an instantiation expression; hoisting it into an explicitly typed const (same pattern as mc-kernel's ClockPort in src/domain/clock.ts) gives the extends clause a plain identifier.
+const WorldRuntimePortBase: Context.TagClass<
   WorldRuntimePort,
+  '@nerima-games/mc-playground-kit/WorldRuntimePort',
   WorldRuntimeService
->() {}
+> = Context.Tag('@nerima-games/mc-playground-kit/WorldRuntimePort')<WorldRuntimePort, WorldRuntimeService>()
+export class WorldRuntimePort extends WorldRuntimePortBase {}
 
 const invalidSpec = (
   field: InvalidWorldSpecError['field'],

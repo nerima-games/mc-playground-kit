@@ -120,7 +120,7 @@
     // available oxlint release does not implement it.
     "no-restricted-globals": ["warn", "name", "open", "close", "event"],
     "no-restricted-imports": [
-      "warn",
+      "error",
       {
         "paths": [
           {
@@ -131,8 +131,22 @@
         ],
         "patterns": [
           {
-            "regex": "^@nerima-games/(mc-audio|mc-compose|mc-dev-meta|mc-meshing|mc-noise|mx-gameplay|mx-multiplayer|mx-redstone|mx-ui)(/.*)?$",
-            "message": "mc-playground-kit may import only the published kernel, simulation, physics, and persistence surfaces directly; compose other runtime packages behind the application ports."
+            "group": [
+              "@nerima-games/**",
+              "!@nerima-games/mc-kernel",
+              "!@nerima-games/mc-kernel/**",
+              "!@nerima-games/mc-worldgen",
+              "!@nerima-games/mc-worldgen/**",
+              "!@nerima-games/mc-sim",
+              "!@nerima-games/mc-sim/**",
+              "!@nerima-games/mc-render",
+              "!@nerima-games/mc-render/**",
+              "!@nerima-games/mc-physics",
+              "!@nerima-games/mc-physics/**",
+              "!@nerima-games/mc-save",
+              "!@nerima-games/mc-save/**"
+            ],
+            "message": "mc-playground-kit is Tier2 (DEPENDENCY_POLICY.md §1); only the listed packages may be imported."
           }
         ]
       }

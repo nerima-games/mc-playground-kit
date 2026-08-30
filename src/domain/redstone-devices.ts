@@ -13,7 +13,7 @@ export const REDSTONE_REPEATER_DELAY_MAX_TICKS = 4
 
 export type RepeaterDelayTicks = number & Brand.Brand<'RepeaterDelayTicks'>
 
-export const repeaterDelayTicks = Brand.refined<RepeaterDelayTicks>(
+export const repeaterDelayTicks: Brand.Brand.Constructor<RepeaterDelayTicks> = Brand.refined<RepeaterDelayTicks>(
   (value) =>
     Number.isInteger(value) &&
     value >= REDSTONE_REPEATER_DELAY_MIN_TICKS &&
@@ -64,7 +64,7 @@ const requireHorizontalFace = (facing: string): HorizontalRedstoneFace => {
 
 export const redstoneRepeater = (
   facing: string,
-  delayTicks = REDSTONE_REPEATER_DELAY_MIN_TICKS,
+  delayTicks: number = REDSTONE_REPEATER_DELAY_MIN_TICKS,
   locked = false,
 ): RedstoneRepeater => ({
   delayTicks: repeaterDelayTicks(delayTicks),

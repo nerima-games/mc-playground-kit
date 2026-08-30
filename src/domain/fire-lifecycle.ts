@@ -92,12 +92,12 @@ export type FireLifecycleStep = {
   readonly entityDamages: ReadonlyArray<FireEntityDamage>
 }
 
-export const FIRE_LIFECYCLE_SNAPSHOT_VERSION = ONE
+export const FIRE_LIFECYCLE_SNAPSHOT_VERSION: number = ONE
 export const FIRE_NATURAL_LIFETIME_TICKS = 8
-export const FIRE_TICK_INTERVAL_SECS = ONE / TICKS_PER_SECOND
+export const FIRE_TICK_INTERVAL_SECS: number = ONE / TICKS_PER_SECOND
 export const FIRE_SPREAD_CHANCE = 0.3
-export const FIRE_BLOCK_ID = blockIdOf('fire')
-export const WATER_BLOCK_ID = blockIdOf('water')
+export const FIRE_BLOCK_ID: BlockId = blockIdOf('fire')
+export const WATER_BLOCK_ID: BlockId = blockIdOf('water')
 export const FIRE_CONTACT_DAMAGE: Damage = { amount: 1, cause: 'fire' }
 export const FIRE_BURN_DURATION_TICKS = 80
 export const FIRE_DAMAGE_INTERVAL_TICKS = 20

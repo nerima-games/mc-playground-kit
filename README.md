@@ -106,28 +106,33 @@ application policies.
 
 ## Development
 
-The repository uses Node 24, pnpm 11, TypeScript, Effect, Vitest, and the Nix
-development shell. From the repository root:
+The repository uses Node 24, pnpm 11.24.0, TypeScript 7, Effect, Vitest 4, and
+the Nix development shell. From the repository root:
 
 ~~~sh
 nix develop
-pnpm install --frozen-lockfile --ignore-scripts
-pnpm typecheck
-pnpm test:coverage
-pnpm build
-pnpm test:package
-pnpm lint
+nix develop --command pnpm install --frozen-lockfile
+nix develop --command pnpm typecheck
+nix develop --command pnpm test:coverage
+nix develop --command pnpm package:verify
+nix develop --command pnpm lint
 ~~~
 
-oxlint is provided by Nix, so pnpm lint and pnpm verify must run inside nix
-develop. The CI-equivalent command is:
+oxlint and ast-grep are provided by Nix, so pnpm lint, pnpm verify, and
+pnpm package:verify must run inside nix develop. The CI-equivalent commands
+are:
 
 ~~~sh
 nix develop --command pnpm verify
+nix develop --command pnpm test:coverage
+nix develop --command pnpm package:verify
+nix develop --command pnpm audit
 ~~~
 
-pnpm verify runs typechecking, linting, the coverage-enabled test suite, the
-package build, and the generated package runtime smoke test.
+pnpm verify runs typechecking, linting, and the test suite. Coverage, the
+package build, and the packed-archive runtime smoke test are separate steps
+(pnpm test:coverage and pnpm package:verify) run individually in CI, and
+together with pnpm verify as pnpm prepublishOnly before a release.
 
 ## Public entry points
 
