@@ -5,8 +5,10 @@ import {
   type BlockPositionKey,
   CHUNK_SIZE_XZ,
   type Chunk,
+  type ChunkBlocks,
   type ChunkCoord,
   type ChunkKey,
+  type EncodedChunk,
   type LocalBlockCoord,
   MAX_CHUNK_HEIGHT,
   blockPosition,
@@ -122,10 +124,23 @@ const isEmptyChunk = (blocks: Readonly<Uint8Array>): boolean => {
   return true
 }
 
+// ChunkBlocks.toBytes() is the wire encoding, BYTES_PER_ELEMENT bytes per
+// Block: it is not a drop-in Uint8Array of one block id per slot. This
+// Package's own ChunkSnapshot storage keeps the legacy one-byte-per-block
+// Shape, so each id is read back through the checked per-index accessor.
+const legacyBytesOf = (blocks: ChunkBlocks): Uint8Array => {
+  const bytes = new Uint8Array(blocks.length)
+  for (let index = 0; index < blocks.length; index += UNIT_STEP) {
+    bytes[index] = blocks.get(index)
+  }
+  return bytes
+}
+
 const snapshotOf = (value: Chunk): ChunkSnapshot => {
-  const validated = chunk(value.coord, value.height, value.blocks.toBytes())
+  const blocks = legacyBytesOf(value.blocks)
+  const validated = chunk(value.coord, value.height, blocks)
   return {
-    blocks: validated.blocks.toBytes(),
+    blocks,
     coord: validated.coord,
     height: validated.height,
   }
@@ -366,7 +381,7 @@ export const storeChunkInChunkWorld = (
   return { chunk: stored, outcome: 'stored', world: worldWithChunks(world, nextChunks) }
 }
 
-export const encodeChunkAt = (world: ChunkWorld, coord: ChunkCoord): Uint8Array | undefined => {
+export const encodeChunkAt = (world: ChunkWorld, coord: ChunkCoord): EncodedChunk | undefined => {
   const stored = chunkAt(world, coord)
 
   if (!stored) {
@@ -378,7 +393,7 @@ export const encodeChunkAt = (world: ChunkWorld, coord: ChunkCoord): Uint8Array 
 
 export const loadEncodedChunkIntoWorld = (
   world: ChunkWorld,
-  encoded: Uint8Array,
+  encoded: Uint8Array | EncodedChunk,
 ): ChunkWorldDecodeResult => {
   try {
     return storeChunkInChunkWorld(world, decodeChunk(encoded))
