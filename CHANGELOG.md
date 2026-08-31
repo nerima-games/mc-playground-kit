@@ -1,5 +1,17 @@
 # @nerima-games/mc-playground-kit
 
+## 0.3.1
+
+### Patch Changes
+
+- [#16](https://github.com/nerima-games/mc-playground-kit/pull/16) [`5bd960b`](https://github.com/nerima-games/mc-playground-kit/commit/5bd960b0a7e60342d6263fce6b0d6fb58e0abe8c) Thanks [@takeokunn](https://github.com/takeokunn)! - Align internal pins to the current published versions
+  
+  - `@nerima-games/mc-physics` to 0.2.2
+  - `@nerima-games/mc-sim` to 0.4.2
+  - `@nerima-games/mc-worldgen` to 0.3.2
+  Each of these upstream releases contained a pin change and no source change,
+  so no behaviour moves with this bump.
+
 ## 0.3.0
 
 ### Minor Changes
