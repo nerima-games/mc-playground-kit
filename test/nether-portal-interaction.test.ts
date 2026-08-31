@@ -1,5 +1,10 @@
-import { AIR_BLOCK_ID, blockIdOf, blockPosition } from '@nerima-games/mc-kernel'
-import { generatePortalLayout, type PortalAxis } from '@nerima-games/mc-worldgen'
+import {
+  AIR_BLOCK_ID,
+  type PortalAxis,
+  blockIdOf,
+  blockPosition,
+  generatePortalLayout,
+} from '@nerima-games/mc-kernel'
 import { Option } from 'effect'
 import { describe, expect, it } from 'vitest'
 import { blockAt, emptyBlockWorld, setBlockAt } from '../src/domain/block-interaction.js'

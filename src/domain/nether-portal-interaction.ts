@@ -1,6 +1,11 @@
-import { type BlockPosition, blockIdOf, blockPosition } from '@nerima-games/mc-kernel'
+import {
+  type BlockPosition,
+  type PortalFrame,
+  blockIdOf,
+  blockPosition,
+  detectNetherPortal,
+} from '@nerima-games/mc-kernel'
 import { type BlockWorld, blockReaderOf, setBlockAt } from './block-world.js'
-import { type PortalFrame, detectNetherPortal } from '@nerima-games/mc-worldgen'
 import { Option } from 'effect'
 
 export type NetherPortalActivation = {
@@ -24,12 +29,12 @@ export const activateNetherPortal = (
     ignition,
   )
 
-  if (Option.isNone(frame)) {
+  if (!frame) {
     return Option.none()
   }
 
   return Option.some({
-    frame: frame.value,
-    world: materializePortal(world, frame.value),
+    frame,
+    world: materializePortal(world, frame),
   })
 }
