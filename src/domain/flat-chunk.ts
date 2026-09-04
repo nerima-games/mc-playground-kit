@@ -60,7 +60,7 @@ const blockAtHeight = (height: number, surfaceY: number, materials: FlatChunkMat
 /** Replace generated terrain with a deterministic, dimension-aware flat layer. */
 export const flatChunkOf = (chunk: Chunk, surfaceY: number, dimension: Dimension = 'overworld'): Chunk => {
   const materials = FLAT_CHUNK_MATERIALS[dimension]
-  const blocks = new Uint8Array(chunk.blocks)
+  const blocks = new Uint16Array(chunk.blocks)
   for (let localX = 0; localX < CHUNK_SIZE_XZ; localX += UNIT_STEP) {
     for (let localZ = 0; localZ < CHUNK_SIZE_XZ; localZ += UNIT_STEP) {
       for (let localY = 0; localY < CHUNK_HEIGHT; localY += UNIT_STEP) {

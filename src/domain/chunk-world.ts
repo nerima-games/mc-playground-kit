@@ -30,7 +30,7 @@ const UNIT_STEP = 1
 export type ChunkSnapshot = {
   readonly coord: ChunkCoord
   readonly height: number
-  readonly blocks: Readonly<Uint8Array>
+  readonly blocks: Readonly<Uint16Array>
 }
 
 export type ChunkWorld = {
@@ -114,7 +114,7 @@ const blockIndexOf = (
 ): number =>
   (local.lx * CHUNK_SIZE_XZ + local.lz) * height + local.ly - minY
 
-const isEmptyChunk = (blocks: Readonly<Uint8Array>): boolean => {
+const isEmptyChunk = (blocks: Readonly<Uint16Array>): boolean => {
   for (const blockId of blocks) {
     if (blockId !== AIR_BLOCK_ID) {
       return false
@@ -125,29 +125,49 @@ const isEmptyChunk = (blocks: Readonly<Uint8Array>): boolean => {
 }
 
 // ChunkBlocks.toBytes() is the wire encoding, BYTES_PER_ELEMENT bytes per
-// Block: it is not a drop-in Uint8Array of one block id per slot. This
-// Package's own ChunkSnapshot storage keeps the legacy one-byte-per-block
-// Shape, so each id is read back through the checked per-index accessor.
-const legacyBytesOf = (blocks: ChunkBlocks): Uint8Array => {
-  const bytes = new Uint8Array(blocks.length)
+// Block: it is not a drop-in typed array of one block id per slot. This
+// Package's own ChunkSnapshot storage keeps one full-width id per slot
+// Instead, so each id is read back through the checked per-index accessor
+// Rather than aliased out of the wire buffer.
+const blockIdsOf = (blocks: ChunkBlocks): Uint16Array => {
+  const ids = new Uint16Array(blocks.length)
   for (let index = 0; index < blocks.length; index += UNIT_STEP) {
-    bytes[index] = blocks.get(index)
+    ids[index] = blocks.get(index)
   }
-  return bytes
+  return ids
 }
 
-const snapshotOf = (value: Chunk): ChunkSnapshot => {
-  const blocks = legacyBytesOf(value.blocks)
-  const validated = chunk(value.coord, value.height, blocks)
-  return {
-    blocks,
-    coord: validated.coord,
-    height: validated.height,
+// `value` is already a validated Chunk, so its coord and height are already
+// The exact branded values a round trip through `chunk()` would produce.
+// Reconstructing through `chunk()` here would also force `blocks` back
+// Through its byte-capped Uint8Array parameter, undoing the widening below.
+const snapshotOf = (value: Chunk): ChunkSnapshot => ({
+  blocks: blockIdsOf(value.blocks),
+  coord: value.coord,
+  height: value.height,
+})
+
+// Kernel's own `chunk()` constructor takes a `Uint8Array`, one byte per
+// Block: it is the legacy/friendly shape and narrows any id above 255 on
+// Assignment. Building a wide id requires the air-filled scaffold `chunk()`
+// Happily accepts, then widening each slot through `ChunkBlocks`'s own
+// Checked, registry-validating `set()` — never through a second typed-array
+// Cast, which would silently repeat the same truncation.
+export const kernelChunkFromBlocks = (
+  coord: ChunkCoord,
+  height: number,
+  blocks: Readonly<Uint16Array>,
+): Chunk => {
+  const built = chunk(coord, height, new Uint8Array(blocks.length))
+  for (let index = 0; index < blocks.length; index += UNIT_STEP) {
+    // oxlint-disable-next-line new-cap -- BlockId is the kernel's validated branded constructor.
+    built.blocks.set(index, BlockId(blocks[index]!))
   }
+  return built
 }
 
 const kernelChunkOf = (value: ChunkSnapshot): Chunk =>
-  chunk(value.coord, value.height, Uint8Array.from(value.blocks))
+  kernelChunkFromBlocks(value.coord, value.height, value.blocks)
 
 const worldWithChunks = (
   world: ChunkWorld,
@@ -262,12 +282,12 @@ const chunkLocationOf = (position: BlockPosition): ChunkLocation => {
 const mutableBlocksOf = (
   world: ChunkWorld,
   stored: ChunkSnapshot | undefined,
-): Uint8Array => {
+): Uint16Array => {
   if (stored) {
-    return Uint8Array.from(stored.blocks)
+    return Uint16Array.from(stored.blocks)
   }
 
-  return new Uint8Array(expectedBlockCount(world.height))
+  return new Uint16Array(expectedBlockCount(world.height))
 }
 
 const previousBlockIdOf = (
@@ -304,7 +324,7 @@ const chunksAfterBlockWrite = ({
   } else {
     nextChunks.set(
       location.key,
-      snapshotOf(chunk(location.coord, world.height, blocks)),
+      snapshotOf(kernelChunkFromBlocks(location.coord, world.height, blocks)),
     )
   }
 
