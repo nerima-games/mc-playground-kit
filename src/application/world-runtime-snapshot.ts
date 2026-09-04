@@ -8,9 +8,10 @@ import { Cause, Data, Effect } from 'effect'
 import {
   type ChunkWorld,
   emptyChunkWorld,
+  kernelChunkFromBlocks,
   storeChunkInChunkWorld,
 } from '../domain/chunk-world.js'
-import { type Chunk as KernelChunk, chunkCoord, chunk as kernelChunk } from '@nerima-games/mc-kernel'
+import { type Chunk as KernelChunk, chunkCoord } from '@nerima-games/mc-kernel'
 
 export type WorldRuntimeSnapshotReason =
   | 'chunk-unloaded-during-snapshot'
@@ -45,11 +46,15 @@ const sameLoadedCoords = (
   return right.every((coord) => leftKeys.has(coordKeyOf(coord)))
 }
 
+// Worldgen's own Chunk.blocks is a plain, unregistry-gated Uint16Array
+// (mc-worldgen 0.4.0); kernelChunkFromBlocks widens each id through the
+// Kernel Chunk's own checked set() rather than a Uint8Array cast, which
+// Would silently narrow any id above 255.
 const kernelChunkOf = (value: GeneratedChunk): KernelChunk =>
-  kernelChunk(
+  kernelChunkFromBlocks(
     chunkCoord(value.coord.cx, value.coord.cz),
     CHUNK_HEIGHT,
-    Uint8Array.from(value.blocks),
+    value.blocks,
   )
 
 export const snapshotChunk = (

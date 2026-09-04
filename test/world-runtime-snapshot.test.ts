@@ -111,7 +111,7 @@ describe('snapshotWorldRuntime', () => {
           Effect.map(store.snapshot(coord), (value) =>
             value === undefined
               ? value
-              : { ...value, blocks: new Uint8Array(1) },
+              : { ...value, blocks: new Uint16Array(1) },
           ),
       }
       const result = yield* Effect.either(snapshotWorldRuntime(broken))

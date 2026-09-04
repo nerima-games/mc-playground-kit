@@ -201,4 +201,42 @@ describe('chunk world', () => {
     }
     expect(invalid.reason.length).toBeGreaterThan(0)
   })
+
+  // BLOCK_REGISTRY's current maximum id is well under 255, so no id above
+  // 255 can be constructed through kernel's validated chunk()/BlockState
+  // surface using today's real roster — the same constraint kernel's own
+  // test/chunk.test.ts documents and works around by mocking its *own*
+  // internal registry module. That workaround does not reach this package:
+  // kernel's barrel (`@nerima-games/mc-kernel`) re-exports block-registry.js
+  // by a relative path internal to kernel's own dist, and mocking kernel's
+  // published `./domain/block-registry` subpath export does not intercept
+  // that internal re-export (verified directly: isKnownBlockId(300) reads
+  // true through the mocked subpath but still false through the barrel), so
+  // a downstream package cannot substitute kernel's live roster the way
+  // kernel's own suite can. What this package can and does prove instead is
+  // that its own storage width no longer forces the truncation: every
+  // ChunkSnapshot now holds a Uint16Array, not the retired Uint8Array whose
+  // element assignment would have wrapped 300 down to 44 before an id could
+  // ever reach kernel's boundary.
+  it('stores a full-width Uint16Array per chunk, not the retired one-byte-per-block Uint8Array', () => {
+    const world = emptyChunkWorld(HEIGHT)
+    const value = sampleChunk()
+    const stored = storeChunkInChunkWorld(world, value)
+
+    expect(stored.outcome).toBe('stored')
+    const snapshot = chunkAt(stored.world, value.coord)
+    expect(snapshot?.blocks).toBeInstanceOf(Uint16Array)
+    expect(snapshot?.blocks).not.toBeInstanceOf(Uint8Array)
+  })
+
+  it('keeps the same full-width storage on the write path', () => {
+    const world = emptyChunkWorld(HEIGHT)
+    const position = blockPosition(1, 2, 3)
+    const written = writeBlockAtChunkWorld(world, position, blockIdOf('dirt'))
+
+    expect(written.outcome).toBe('updated')
+    const snapshot = chunkAt(written.world, chunkCoord(0, 0))
+    expect(snapshot?.blocks).toBeInstanceOf(Uint16Array)
+    expect(snapshot?.blocks).not.toBeInstanceOf(Uint8Array)
+  })
 })
