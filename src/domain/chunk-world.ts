@@ -159,9 +159,9 @@ export const kernelChunkFromBlocks = (
   blocks: Readonly<Uint16Array>,
 ): Chunk => {
   const built = chunk(coord, height, new Uint8Array(blocks.length))
-  for (let index = 0; index < blocks.length; index += UNIT_STEP) {
+  for (const [index, block] of blocks.entries()) {
     // oxlint-disable-next-line new-cap -- BlockId is the kernel's validated branded constructor.
-    built.blocks.set(index, BlockId(blocks[index]!))
+    built.blocks.set(index, BlockId(block))
   }
   return built
 }
@@ -199,7 +199,11 @@ export const blockAtChunkWorld = (world: ChunkWorld, position: BlockPosition): B
   }
 
   const local = localCoordOfBlock(position)
-  return stored.blocks[blockIndexOf(stored.height, world.minY, local)]! as BlockId
+  // The index is in range by construction: `localCoordOfBlock` clamps x and z
+  // To the chunk footprint, and y was range-checked against the world above.
+  // Air answers the impossible miss for the same reason the returns above do.
+  // oxlint-disable-next-line new-cap -- BlockId is the kernel's validated branded constructor.
+  return BlockId(stored.blocks[blockIndexOf(stored.height, world.minY, local)] ?? AIR_BLOCK_ID)
 }
 
 export const blockReaderOfChunkWorld = (world: ChunkWorld): BlockReader =>
@@ -223,8 +227,10 @@ const blockEntryAt = ({
   world,
 }: BlockEntryAtOptions): BlockEntry | null => {
   const index = (localX * CHUNK_SIZE_XZ + localZ) * stored.height + localY
+  // The caller's loops keep each coordinate within the chunk footprint and the
+  // Column range, so the index addresses one of this snapshot's cells.
   // oxlint-disable-next-line new-cap -- BlockId is the kernel's validated branded constructor.
-  const blockId = BlockId(stored.blocks[index]!)
+  const blockId = BlockId(stored.blocks[index] ?? AIR_BLOCK_ID)
 
   if (blockId === AIR_BLOCK_ID) {
     return null

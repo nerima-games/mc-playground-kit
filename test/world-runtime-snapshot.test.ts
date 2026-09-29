@@ -232,8 +232,9 @@ describe('snapshotWorldRuntime', () => {
       }
 
       const events: Array<string> = []
+      const registered = yield* opened.value.chunks.subscribeDirty
       const subscription: ChunkDirtySubscription = {
-        id: 1 as ChunkDirtySubscription['id'],
+        id: registered.id,
         drain: Effect.succeed({ changed: [], removed: [] }),
         unsubscribe: Effect.sync(() => {
           events.push('unsubscribe')

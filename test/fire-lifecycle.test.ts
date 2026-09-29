@@ -19,6 +19,7 @@ import {
   makeFireLifecycleState,
   restoreFireLifecycleSnapshot,
 } from '../src/domain/fire-lifecycle'
+import { atIndex, firstOf } from './support/require-present'
 
 const air = blockIdOf('air')
 const fire = blockIdOf('fire')
@@ -72,10 +73,14 @@ describe('fire lifecycle', () => {
       seed: 1,
       tickAccumulatorSecs: FIRE_TICK_INTERVAL_SECS * FIRE_FRAME_TICK_BUDGET,
     })
-    expect(snapshot.fires[0]!.position).not.toBe(state.fires[0]!.position)
-    expect(snapshot.burningActors[0]!.position).not.toBe(burningActors[0]!.position)
-    expect(snapshot.fires[0]!.position.x).toBe(1)
-    expect(snapshot.burningActors[0]!.position.x).toBe(3)
+    const snapshotFire = firstOf(snapshot.fires, 'the snapshot fire')
+    const snapshotActor = firstOf(snapshot.burningActors, 'the snapshot burning actor')
+    expect(snapshotFire.position).not.toBe(firstOf(state.fires, 'the state fire').position)
+    expect(snapshotActor.position).not.toBe(
+      firstOf(burningActors, 'the state burning actor').position,
+    )
+    expect(snapshotFire.position.x).toBe(1)
+    expect(snapshotActor.position.x).toBe(3)
     expect(makeFireLifecycleSnapshot(state, Number.NaN).tickAccumulatorSecs).toBe(0)
 
     const restored = restoreFireLifecycleSnapshot({
@@ -85,8 +90,9 @@ describe('fire lifecycle', () => {
     })
     expect(restored.state.seed).toBe(1)
     expect(restored.tickAccumulatorSecs).toBe(0)
-    expect(restored.state.fires[0]!.position).not.toBe(snapshot.fires[0]!.position)
-    expect(restored.state.fires[0]!.position.x).toBe(1)
+    expect(firstOf(restored.state.fires, 'the restored fire').position)
+      .not.toBe(snapshotFire.position)
+    expect(firstOf(restored.state.fires, 'the restored fire').position.x).toBe(1)
   })
 
   it('validates snapshot boundaries before restoring them', () => {
@@ -170,7 +176,7 @@ describe('fire lifecycle', () => {
       [cell(at(0), FIRE_UNAVAILABLE_BLOCK)],
       'clear',
     )
-    expect(unavailable.state.fires[0]!.unloadedRetries).toBe(1)
+    expect(firstOf(unavailable.state.fires, 'the unavailable fire').unloadedRetries).toBe(1)
 
     const wrongBlock = advanceFireLifecycle(
       makeFireLifecycleState([at(0)], 1),
@@ -273,8 +279,9 @@ describe('fire lifecycle', () => {
     const fires = Array.from({ length: FIRE_WORK_BUDGET + 1 }, (_, x) => burningFire(at(x)))
     const result = advanceFireLifecycle({ fires, seed: 1 }, [], 'clear')
     expect(result.state.fires).toHaveLength(FIRE_WORK_BUDGET + 1)
-    expect(result.state.fires[0]!.unloadedRetries).toBe(1)
-    expect(result.state.fires[FIRE_WORK_BUDGET]!.unloadedRetries).toBeUndefined()
+    expect(firstOf(result.state.fires, 'the burned fire').unloadedRetries).toBe(1)
+    expect(atIndex(result.state.fires, FIRE_WORK_BUDGET, 'the deferred fires').unloadedRetries)
+      .toBeUndefined()
   })
 
   it('tracks player and entity fire contacts with difficulty and cooldown rules', () => {

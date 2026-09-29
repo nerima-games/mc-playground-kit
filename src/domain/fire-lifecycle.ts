@@ -256,55 +256,55 @@ export const makeFireLifecycleSnapshot = (
   version: FIRE_LIFECYCLE_SNAPSHOT_VERSION,
 })
 
-const isFirePositionValue = (value: unknown): value is FirePosition => {
-  if (typeof value !== 'object' || value === null) {
-    return false
-  }
-  const candidate = value as Partial<FirePosition>
-  return Number.isFinite(candidate[X_COORDINATE]) &&
-    Number.isFinite(candidate[Y_COORDINATE]) &&
-    Number.isFinite(candidate[Z_COORDINATE])
-}
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+
+const isFirePositionValue = (value: unknown): value is FirePosition =>
+  isRecord(value) &&
+  Number.isFinite(value[X_COORDINATE]) &&
+  Number.isFinite(value[Y_COORDINATE]) &&
+  Number.isFinite(value[Z_COORDINATE])
 
 const isActiveFireValue = (value: unknown): value is ActiveFire => {
-  if (typeof value !== 'object' || value === null) {
+  if (!isRecord(value)) {
     return false
   }
-  const candidate = value as Partial<ActiveFire>
-  const { unloadedRetries } = candidate
+  const { ageTicks, position, unloadedRetries } = value
   const hasValidRetries = typeof unloadedRetries === 'undefined' ||
-    (Number.isInteger(unloadedRetries) && unloadedRetries >= ZERO)
-  return isFirePositionValue(candidate.position) &&
-    typeof candidate.ageTicks === 'number' &&
-    Number.isInteger(candidate.ageTicks) && candidate.ageTicks >= ZERO &&
+    (typeof unloadedRetries === 'number' &&
+      Number.isInteger(unloadedRetries) &&
+      unloadedRetries >= ZERO)
+  return isFirePositionValue(position) &&
+    typeof ageTicks === 'number' &&
+    Number.isInteger(ageTicks) && ageTicks >= ZERO &&
     hasValidRetries
 }
 
 const isBurningActorValue = (value: unknown): value is BurningActor => {
-  if (typeof value !== 'object' || value === null) {
+  if (!isRecord(value)) {
     return false
   }
-  const candidate = value as Partial<BurningActor>
-  return typeof candidate.id === 'string' &&
-    (candidate.kind === 'player' || candidate.kind === 'entity') &&
-    isFirePositionValue(candidate.position) &&
-    typeof candidate.remainingTicks === 'number' &&
-    Number.isInteger(candidate.remainingTicks) && candidate.remainingTicks > ZERO &&
-    typeof candidate.damageCooldownTicks === 'number' &&
-    Number.isInteger(candidate.damageCooldownTicks) && candidate.damageCooldownTicks >= ZERO
+  const { damageCooldownTicks, id, kind, position, remainingTicks } = value
+  return typeof id === 'string' &&
+    (kind === 'player' || kind === 'entity') &&
+    isFirePositionValue(position) &&
+    typeof remainingTicks === 'number' &&
+    Number.isInteger(remainingTicks) && remainingTicks > ZERO &&
+    typeof damageCooldownTicks === 'number' &&
+    Number.isInteger(damageCooldownTicks) && damageCooldownTicks >= ZERO
 }
 
 export const isFireLifecycleSnapshot = (value: unknown): value is FireLifecycleSnapshot => {
-  if (typeof value !== 'object' || value === null) {
+  if (!isRecord(value)) {
     return false
   }
-  const candidate = value as Partial<FireLifecycleSnapshot>
-  return candidate.version === FIRE_LIFECYCLE_SNAPSHOT_VERSION &&
-    Array.isArray(candidate.fires) && candidate.fires.every(isActiveFireValue) &&
-    Array.isArray(candidate.burningActors) && candidate.burningActors.every(isBurningActorValue) &&
-    typeof candidate.seed === 'number' && Number.isFinite(candidate.seed) &&
-    typeof candidate.tickAccumulatorSecs === 'number' &&
-    Number.isFinite(candidate.tickAccumulatorSecs) && candidate.tickAccumulatorSecs >= ZERO
+  const { burningActors, fires, seed, tickAccumulatorSecs, version } = value
+  return version === FIRE_LIFECYCLE_SNAPSHOT_VERSION &&
+    Array.isArray(fires) && fires.every(isActiveFireValue) &&
+    Array.isArray(burningActors) && burningActors.every(isBurningActorValue) &&
+    typeof seed === 'number' && Number.isFinite(seed) &&
+    typeof tickAccumulatorSecs === 'number' &&
+    Number.isFinite(tickAccumulatorSecs) && tickAccumulatorSecs >= ZERO
 }
 
 export const restoreFireLifecycleSnapshot = (

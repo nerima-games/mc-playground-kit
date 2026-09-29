@@ -78,7 +78,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
 const isStatusEffectType = (value: unknown): value is StatusEffectType =>
-  typeof value === 'string' && STATUS_EFFECT_TYPES.includes(value as StatusEffectType)
+  typeof value === 'string' && STATUS_EFFECT_TYPES.some((type) => type === value)
 
 type OptionalProperty = {
   readonly present: boolean

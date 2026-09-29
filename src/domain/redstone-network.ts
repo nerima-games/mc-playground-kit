@@ -41,8 +41,6 @@ import {
   type RedstoneDevice,
 } from './redstone-devices.js'
 
-const REDSTONE_QUEUE_INDEX_STEP = 1
-
 const isWire = (world: BlockWorld, position: BlockPosition): boolean =>
   blockAt(world, position) === REDSTONE_BLOCK_IDS.wire
 
@@ -254,10 +252,9 @@ const propagateFromWire = (
 }
 
 const propagatePoweredWires = (context: WirePropagation): void => {
-  let pendingIndex = 0
-  while (pendingIndex < context.queue.pending.length) {
-    const current = context.queue.pending[pendingIndex]!
-    pendingIndex += REDSTONE_QUEUE_INDEX_STEP
+  // Array iteration re-reads the length on each step, so wires enqueued by
+  // `propagateFromWire` are still visited while draining the queue.
+  for (const [, current] of context.queue.pending.entries()) {
     propagateFromWire(context, current)
   }
 }

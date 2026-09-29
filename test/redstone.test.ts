@@ -121,7 +121,7 @@ describe('redstone device definitions', () => {
     expect(() => redstoneRepeater('up')).toThrow()
     expect(() => redstoneRepeater('east', 0)).toThrow()
     expect(() => redstoneRepeater('east', 5)).toThrow()
-    expect(() => redstoneComparator('east', 'invalid' as never)).toThrow()
+    expect(() => redstoneComparator('east', 'invalid')).toThrow()
     expect(() => redstoneObserver('diagonal')).toThrow()
   })
 })

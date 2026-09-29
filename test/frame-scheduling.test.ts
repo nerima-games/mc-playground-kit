@@ -4,7 +4,7 @@ import { requestNextFrameIfActive } from '../src/application/frame-scheduling'
 describe('frame scheduling', () => {
   it('requests only when the preview generation is active', () => {
     const callbacks: Array<FrameRequestCallback> = []
-    const callback = (() => undefined) as FrameRequestCallback
+    const callback: FrameRequestCallback = () => undefined
     const scheduler = {
       request: (next: FrameRequestCallback) => {
         callbacks.push(next)

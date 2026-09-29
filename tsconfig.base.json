@@ -7,8 +7,9 @@
     "target": "ES2024",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    // The shipped browser lifecycle uses DOM types. Node types are added only
-    // by the test and preview projects, so the package surface stays portable.
+    // The shipped browser lifecycle is part of this package's contract, so the
+    // DOM types belong here rather than in a consumer. Node globals stay out;
+    // the test and preview projects add them in their own tsconfigs.
     "lib": ["ES2024", "DOM", "DOM.Iterable"],
     "types": [],
 
@@ -47,11 +48,13 @@
     "isolatedModules": true,
     // Public declarations must be derivable from each source file's explicit
     // annotations. This prevents an implementation-only inference change from
-    // silently changing the package API.
+    // silently changing the package API; Effect's Tag and TaggedError idioms are
+    // handled by hoisting the base into an explicitly typed const, because
+    // `extends` cannot infer through an instantiation expression.
     "isolatedDeclarations": true,
     // A type-only import must say so. The emitted JavaScript then follows from
     // the import statement alone, with no whole-program analysis deciding which
-    // specifiers survive — which is what a package shipping ESM to its org
+    // specifiers survive, which is what a package shipping ESM to its org
     // consumers wants.
     "verbatimModuleSyntax": true,
     // Nothing that needs a runtime transform to have meaning: no enum, no
@@ -68,7 +71,7 @@
     "newLine": "lf",
     "stripInternal": true,
 
-    // Check-only is the safe default. `tsconfig.release.json` is the sole
+    // The default remains check-only. `tsconfig.release.json` is the sole
     // emitting configuration, so source imports stay type-safe while the
     // published package exposes only generated JavaScript and declarations.
     "noEmit": true,

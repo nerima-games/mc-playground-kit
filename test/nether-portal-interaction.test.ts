@@ -9,6 +9,7 @@ import { Option } from 'effect'
 import { describe, expect, it } from 'vitest'
 import { blockAt, emptyBlockWorld, setBlockAt } from '../src/domain/block-interaction.js'
 import { activateNetherPortal } from '../src/domain/nether-portal-interaction.js'
+import { firstOf } from './support/require-present'
 
 const makePortalFrame = (axis: PortalAxis) => {
   const layout = generatePortalLayout(blockPosition(4, 10, -3), axis, 2, 3)
@@ -23,7 +24,8 @@ const makePortalFrame = (axis: PortalAxis) => {
 describe('nether portal interaction', () => {
   it.each(['x', 'z'] as const)('activates a valid %s-axis frame', (axis) => {
     const { layout, world } = makePortalFrame(axis)
-    const activation = activateNetherPortal(world, layout.interior[0]!)
+    const interior = firstOf(layout.interior, 'the portal interior')
+    const activation = activateNetherPortal(world, interior)
 
     expect(Option.isSome(activation)).toBe(true)
     if (Option.isNone(activation)) {
@@ -41,28 +43,31 @@ describe('nether portal interaction', () => {
 
   it('rejects a frame with a missing non-corner block', () => {
     const { layout, world } = makePortalFrame('x')
+    const interior = firstOf(layout.interior, 'the portal interior')
     const incomplete = setBlockAt(world, blockPosition(4, 9, -3), AIR_BLOCK_ID)
 
-    expect(Option.isNone(activateNetherPortal(incomplete, layout.interior[0]!))).toBe(true)
+    expect(Option.isNone(activateNetherPortal(incomplete, interior))).toBe(true)
   })
 
   it('rejects a non-air ignition cell', () => {
     const { layout, world } = makePortalFrame('x')
-    const occupied = setBlockAt(world, layout.interior[0]!, blockIdOf('stone'))
+    const interior = firstOf(layout.interior, 'the portal interior')
+    const occupied = setBlockAt(world, interior, blockIdOf('stone'))
 
-    expect(Option.isNone(activateNetherPortal(occupied, layout.interior[0]!))).toBe(true)
-    expect(blockAt(occupied, layout.interior[0]!)).toBe(blockIdOf('stone'))
+    expect(Option.isNone(activateNetherPortal(occupied, interior))).toBe(true)
+    expect(blockAt(occupied, interior)).toBe(blockIdOf('stone'))
   })
 
   it('does not relight an already active portal', () => {
     const { layout, world } = makePortalFrame('x')
-    const activation = activateNetherPortal(world, layout.interior[0]!)
+    const interior = firstOf(layout.interior, 'the portal interior')
+    const activation = activateNetherPortal(world, interior)
 
     expect(Option.isSome(activation)).toBe(true)
     if (Option.isNone(activation)) {
       return
     }
 
-    expect(Option.isNone(activateNetherPortal(activation.value.world, layout.interior[0]!))).toBe(true)
+    expect(Option.isNone(activateNetherPortal(activation.value.world, interior))).toBe(true)
   })
 })
