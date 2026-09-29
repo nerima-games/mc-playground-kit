@@ -8,7 +8,6 @@ import { Effect, Option } from 'effect'
 import {
   GeneratedWorldProviderLayer,
   WorldRuntimePort,
-  type WorldRuntime,
 } from '../src/application/generated-world-provider'
 import {
   persistBlockWorld,
@@ -88,12 +87,15 @@ describe('persistBlockWorld', () => {
 
       const empty = emptyBlockWorld()
       const stone = blockIdOf('stone')
-      const cases = [
-        [blockPosition(16, 20, 0), 'ChunkNotLoaded'],
-        [blockPosition(0, 256, 0), 'OutOfWorld'],
-      ] as const
+      const cases: ReadonlyArray<{
+        readonly outcome: 'ChunkNotLoaded' | 'OutOfWorld'
+        readonly position: ReturnType<typeof blockPosition>
+      }> = [
+        { outcome: 'ChunkNotLoaded', position: blockPosition(16, 20, 0) },
+        { outcome: 'OutOfWorld', position: blockPosition(0, 256, 0) },
+      ]
 
-      for (const [position, outcome] of cases) {
+      for (const { outcome, position } of cases) {
         const result = yield* Effect.either(
           persistBlockWorld(
             opened.value,
@@ -113,19 +115,37 @@ describe('persistBlockWorld', () => {
 
   it.effect('normalizes a failed store write after a successful read', () =>
     Effect.gen(function* () {
+      const provider = yield* WorldProviderPort
+      const runtimeService = yield* WorldRuntimePort
+      yield* provider.openFlatWorld({
+        ...DEFAULT_FLAT_WORLD,
+        radiusChunks: 0,
+        surfaceY: 4,
+      })
+      const opened = yield* runtimeService.current
+      if (Option.isNone(opened)) {
+        throw new Error('world was not opened')
+      }
+
       const position = blockPosition(0, 20, 0)
       const stone = blockIdOf('stone')
       const empty = emptyBlockWorld()
       const next = setBlockAt(empty, position, stone)
-      const reading = { _tag: 'Block' as const, block: AIR_BLOCK_ID }
+      const reading = yield* opened.value.chunks.getBlock(position)
+      if (reading._tag !== 'Block') {
+        throw new Error('expected a readable block')
+      }
 
-      for (const outcome of ['ChunkNotLoaded', 'OutOfWorld'] as const) {
-        const runtime = {
-          chunks: {
-            getBlock: () => Effect.succeed(reading),
-            setBlock: () => Effect.succeed({ _tag: outcome }),
-          },
-        } as unknown as WorldRuntime
+      const outcomes: ReadonlyArray<'ChunkNotLoaded' | 'OutOfWorld'> = [
+        'ChunkNotLoaded',
+        'OutOfWorld',
+      ]
+      for (const outcome of outcomes) {
+        const runtime = opened.value
+        Object.assign(runtime.chunks, {
+          getBlock: () => Effect.succeed(reading),
+          setBlock: () => Effect.succeed({ _tag: outcome }),
+        })
         const result = yield* Effect.either(
           persistBlockWorld(runtime, empty, next),
         )
@@ -136,6 +156,6 @@ describe('persistBlockWorld', () => {
           expect(result.left.outcome).toBe(outcome)
         }
       }
-    }),
+    }).pipe(Effect.provide(GeneratedWorldProviderLayer({ terrain: { decorate: false } }))),
   )
 })

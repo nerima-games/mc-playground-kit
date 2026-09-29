@@ -114,6 +114,16 @@ const blockIndexOf = (
 ): number =>
   (local.lx * CHUNK_SIZE_XZ + local.lz) * height + local.ly - minY
 
+const blockIdAt = (blocks: Readonly<Uint16Array>, index: number): BlockId => {
+  const block = blocks.at(index)
+  // oxlint-disable-next-line no-undefined -- Typed-array bounds are represented by undefined.
+  if (block === undefined) {
+    throw new RangeError('Chunk storage is shorter than its declared height')
+  }
+  // oxlint-disable-next-line new-cap -- BlockId is the kernel's validated branded constructor.
+  return BlockId(block)
+}
+
 const isEmptyChunk = (blocks: Readonly<Uint16Array>): boolean => {
   for (const blockId of blocks) {
     if (blockId !== AIR_BLOCK_ID) {
@@ -199,11 +209,8 @@ export const blockAtChunkWorld = (world: ChunkWorld, position: BlockPosition): B
   }
 
   const local = localCoordOfBlock(position)
-  // The index is in range by construction: `localCoordOfBlock` clamps x and z
-  // To the chunk footprint, and y was range-checked against the world above.
-  // Air answers the impossible miss for the same reason the returns above do.
-  // oxlint-disable-next-line new-cap -- BlockId is the kernel's validated branded constructor.
-  return BlockId(stored.blocks[blockIndexOf(stored.height, world.minY, local)] ?? AIR_BLOCK_ID)
+  // Index construction clamps x and z to the chunk footprint and checks y.
+  return blockIdAt(stored.blocks, blockIndexOf(stored.height, world.minY, local))
 }
 
 export const blockReaderOfChunkWorld = (world: ChunkWorld): BlockReader =>
@@ -227,10 +234,8 @@ const blockEntryAt = ({
   world,
 }: BlockEntryAtOptions): BlockEntry | null => {
   const index = (localX * CHUNK_SIZE_XZ + localZ) * stored.height + localY
-  // The caller's loops keep each coordinate within the chunk footprint and the
-  // Column range, so the index addresses one of this snapshot's cells.
-  // oxlint-disable-next-line new-cap -- BlockId is the kernel's validated branded constructor.
-  const blockId = BlockId(stored.blocks[index] ?? AIR_BLOCK_ID)
+  // Caller loops keep each coordinate within the chunk footprint and column range.
+  const blockId = blockIdAt(stored.blocks, index)
 
   if (blockId === AIR_BLOCK_ID) {
     return null

@@ -13,6 +13,7 @@ import {
   makePersistentChunkStore,
 } from '@nerima-games/mc-worldgen'
 import { Context, Effect, Layer, Option, Ref } from 'effect'
+import type { FlatWorldSpec, FlatWorldSpecInput } from '../domain/launch-options.js'
 import {
   InvalidWorldSpecError,
   type WorldProviderError,
@@ -20,8 +21,8 @@ import {
   type WorldProviderService,
 } from './preview-ports.js'
 import { MIN_FLAT_SURFACE_Y, flatChunkOf } from '../domain/flat-chunk.js'
-import type { FlatWorldSpec } from '../domain/launch-options.js'
 import { StoragePort } from '@nerima-games/mc-save'
+import { WorldId as makeWorldId } from '@nerima-games/mc-kernel'
 
 export const DEFAULT_WORLD_DIMENSION: Dimension = 'overworld'
 const EMPTY_TEXT_LENGTH = 0
@@ -62,9 +63,9 @@ const invalidSpec = (
   Effect.fail(new InvalidWorldSpecError({ field, message, value }))
 
 const validateWorldIdentity = (
-  spec: FlatWorldSpec,
+  spec: FlatWorldSpecInput,
 ): Effect.Effect<FlatWorldSpec, InvalidWorldSpecError> => {
-  if (String(spec.worldId).trim().length === EMPTY_TEXT_LENGTH) {
+  if (spec.worldId.trim().length === EMPTY_TEXT_LENGTH) {
     return invalidSpec('worldId', spec.worldId, 'worldId must not be blank')
   }
   if (!Number.isFinite(spec.seed)) {
@@ -73,7 +74,13 @@ const validateWorldIdentity = (
   if (spec.generation !== 'flat' && spec.generation !== 'natural') {
     return invalidSpec('generation', spec.generation, 'generation must be flat or natural')
   }
-  return Effect.succeed(spec)
+  // The kernel's `WorldId` refines on exactly the non-blank rule checked above.
+  // Branding here therefore cannot throw for a spec that reached this point.
+  return Effect.succeed({
+    ...spec,
+    generation: spec.generation,
+    worldId: makeWorldId(spec.worldId),
+  })
 }
 
 const validateSurface = (spec: FlatWorldSpec): Effect.Effect<FlatWorldSpec, InvalidWorldSpecError> => {
@@ -106,7 +113,7 @@ const validateRadius = (spec: FlatWorldSpec): Effect.Effect<FlatWorldSpec, Inval
 }
 
 export const validateWorldSpec = (
-  spec: FlatWorldSpec,
+  spec: FlatWorldSpecInput,
 ): Effect.Effect<FlatWorldSpec, InvalidWorldSpecError> =>
   validateWorldIdentity(spec).pipe(Effect.flatMap(validateSurface), Effect.flatMap(validateRadius))
 
@@ -219,7 +226,7 @@ const makeWorldProvider = (
     const currentRef = yield* Ref.make<Option.Option<WorldRuntime>>(Option.none())
     const mutex = yield* Effect.makeSemaphore(SINGLE_PERMIT)
 
-    const openFlatWorldUnlocked = (spec: FlatWorldSpec): Effect.Effect<void, WorldProviderError> =>
+    const openFlatWorldUnlocked = (spec: FlatWorldSpecInput): Effect.Effect<void, WorldProviderError> =>
       Effect.gen(function* openFlatWorldGen() {
         const validated = yield* validateWorldSpec(spec)
         const current = yield* Ref.get(currentRef)
@@ -245,7 +252,7 @@ const makeWorldProvider = (
       yield* closeRuntime(currentRef, current)
     })
 
-    const openFlatWorld = (spec: FlatWorldSpec): Effect.Effect<void, WorldProviderError> =>
+    const openFlatWorld = (spec: FlatWorldSpecInput): Effect.Effect<void, WorldProviderError> =>
       mutex.withPermits(SINGLE_PERMIT)(openFlatWorldUnlocked(spec))
     const closeWorld = mutex.withPermits(SINGLE_PERMIT)(closeWorldUnlocked)
 

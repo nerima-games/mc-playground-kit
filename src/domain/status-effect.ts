@@ -1,5 +1,3 @@
-import type { DeltaTimeSecs } from '@nerima-games/mc-kernel'
-
 export const STATUS_EFFECT_TYPES = [
   'poison',
   'regeneration',
@@ -25,6 +23,17 @@ export type ActiveStatusEffect = {
 
 export type StatusEffectState = {
   readonly effects: ReadonlyArray<ActiveStatusEffect>
+}
+
+/**
+ * Status state as it arrives, before each `type` has been checked against the
+ * closed effect union. `tickStatusEffects` checks it as it reads, so a value
+ * restored from disk names the effect it does not recognise instead of falling
+ * through to a lookup that cannot answer for it. A state that is already
+ * `StatusEffectState` is assignable to this unchanged.
+ */
+export type StatusEffectStateInput = {
+  readonly effects: ReadonlyArray<Omit<ActiveStatusEffect, 'type'> & { readonly type: string }>
 }
 
 export type StatusEffectTick = {
@@ -250,6 +259,8 @@ const advanceStatusEffect = (
   const amplifier = finiteAmplifier(effect.amplifier)
   const activeElapsedSecs = Math.min(effect.remainingSecs, elapsedSecs)
 
+  // The discriminated union covers every runtime case after input validation.
+  // oxlint-disable-next-line default-case -- Adding a fallback would hide a broken union.
   switch (effect.type) {
     case 'poison': {
       const advanced = advancePulsingEffect(
@@ -295,12 +306,6 @@ const advanceStatusEffect = (
         poisonPulses: ZERO_SECONDS,
         regenerationPulses: ZERO_SECONDS,
       }
-    /* V8 ignore start -- Exhaustive safety net for the closed status-effect union. */
-    default: {
-      const exhaustiveEffect: never = effect.type
-      return exhaustiveEffect
-    }
-    /* V8 ignore stop */
   }
 }
 
@@ -326,11 +331,28 @@ const nauseaAmplifierOf = (
 const sumNumbers = (values: ReadonlyArray<number>): number =>
   values.reduce((total, value) => total + value, ZERO_SECONDS)
 
+/**
+ * Narrows one unvalidated effect to the closed union, naming the value it does
+ * not recognise. The throw replaces what used to happen further down: an
+ * unrecognised `type` skipped every switch arm and came back as a string where
+ * an effect was expected, so the failure surfaced later as an unrelated
+ * property access on `undefined`.
+ */
+const advanceUnvalidatedStatusEffect = (
+  effect: StatusEffectStateInput['effects'][number],
+  elapsedSecs: number,
+): AdvancedStatusEffect => {
+  if (!isStatusEffectType(effect.type)) {
+    throw new TypeError(`status effect type is not recognised: ${effect.type}`)
+  }
+  return advanceStatusEffect({ ...effect, type: effect.type }, elapsedSecs)
+}
+
 const advanceStatusEffects = (
-  effects: ReadonlyArray<ActiveStatusEffect>,
+  effects: StatusEffectStateInput['effects'],
   elapsedSecs: number,
 ): AdvancedStatusEffects => {
-  const advanced = effects.map((effect) => advanceStatusEffect(effect, elapsedSecs))
+  const advanced = effects.map((effect) => advanceUnvalidatedStatusEffect(effect, elapsedSecs))
   const activeEffects = advanced.flatMap((entry) => {
     if (entry.effect === null) {
       return []
@@ -350,8 +372,8 @@ const advanceStatusEffects = (
 }
 
 export const tickStatusEffects = (
-  state: StatusEffectState,
-  dt: DeltaTimeSecs,
+  state: StatusEffectStateInput,
+  dt: number,
 ): StatusEffectTick => {
   const elapsedSecs = finiteDuration(dt)
   const advanced = advanceStatusEffects(state.effects, elapsedSecs)
