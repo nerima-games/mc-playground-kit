@@ -12,13 +12,12 @@ only boundaries that need this package's sparse world or lifecycle ownership.
 ## Package distribution
 
 The supported runtime import is the generated ESM entry point in `dist/index.js`;
-its declarations are emitted as `dist/index.d.ts`. The build bundles the
-source-only runtime exports from the mc-kernel, mc-sim, mc-physics, mc-save, and
-mc-worldgen packages, while keeping `effect` as a normal external dependency.
-Consumers therefore import the package root and do not depend on
+its declarations are emitted as `dist/index.d.ts`. The TypeScript release build
+emits the local entry point while keeping the upstream packages and `effect` as
+runtime dependencies. Consumers therefore import the package root and do not depend on
 checkout-relative TypeScript files.
 
-`pnpm test:package` imports the built entry point under Node 24 and checks the
+`pnpm package:verify` imports the packed entry point under Node 24 and checks the
 required runtime exports. It complements TypeScript declaration checking: a
 successful typecheck alone does not prove that a published ESM entry point can
 be loaded by Node.
@@ -26,8 +25,7 @@ be loaded by Node.
 ## Simulation stages and composition
 
 The root directly re-exports mc-sim's stage factories: `makeSimStages`,
-`makeSimStagesWithPhysics`, `makeSimStagesForPreview`,
-`makeSimStagesForPreviewWithPhysics`, and
+`makeSimStagesWithPhysics`, `makeSimStagesForPreview`, and
 `makeControllableSimStagesWithPhysics`. These factories remain upstream-owned;
 the kit does not wrap their `StageRegistration` values or duplicate the physics
 stage.
