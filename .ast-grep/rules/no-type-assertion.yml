@@ -1,10 +1,6 @@
 id: no-type-assertion
 language: TypeScript
-# Wave 0 installs at warning; W3-mc-playground-kit removes the assertions and
-# raises to error. 70 pre-existing hits as of Wave 0 (11 in src/, across
-# fire-lifecycle.ts, chunk-world.ts, status-effect.ts, redstone-network.ts,
-# redstone-devices.ts, block-light.ts; 59 in test/) — see the Wave 0 PR report.
-severity: warning
+severity: error
 files:
   - "src/**/*.ts"
   - "src/**/*.tsx"

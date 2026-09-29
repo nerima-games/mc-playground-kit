@@ -30,6 +30,7 @@ import {
   setBlockAt,
 } from '../src/domain/block-interaction'
 import { DEFAULT_FLAT_WORLD, flattenStages } from '../src/domain/launch-options'
+import { firstOf } from './support/require-present'
 
 const at = (x: number, y = 0, z = 0) => blockPosition(x, y, z)
 
@@ -84,7 +85,7 @@ describe('gameplay preview', () => {
       const player = yield* PlayerService
       yield* player.moveTo(position(0, 3, 0))
 
-      const physicsStage = preview.simulation.stages[0]!
+      const physicsStage = firstOf(preview.simulation.stages, 'the preview physics stage')
 
       const clock = {
         monotonicSecs: Effect.succeed(MonotonicTimeSecs(0)),
@@ -121,7 +122,7 @@ describe('gameplay preview', () => {
       const player = yield* PlayerService
       yield* player.moveTo(position(0, 8, 0))
 
-      const physicsStage = preview.simulation.stages[0]!
+      const physicsStage = firstOf(preview.simulation.stages, 'the preview physics stage')
       const clock = {
         monotonicSecs: Effect.succeed(MonotonicTimeSecs(0)),
         wallClockEpochMillis: Effect.succeed(EpochMillis(0)),

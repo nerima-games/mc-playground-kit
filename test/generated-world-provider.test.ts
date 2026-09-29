@@ -10,7 +10,7 @@ import {
 } from '@nerima-games/mc-save'
 import { blockIndex, CHUNK_HEIGHT, chunkCoord, generateChunkAt } from '@nerima-games/mc-worldgen'
 import { Effect, Layer, Option, Ref } from 'effect'
-import { DEFAULT_FLAT_WORLD, type FlatWorldSpec } from '../src/domain/launch-options'
+import { DEFAULT_FLAT_WORLD, type FlatWorldSpecInput } from '../src/domain/launch-options'
 import {
   GeneratedWorldProviderLayer,
   MAX_PRELOAD_RADIUS_CHUNKS,
@@ -23,7 +23,7 @@ import {
   type WorldProviderError,
 } from '../src/application/preview-ports'
 
-const spec = (overrides: Partial<FlatWorldSpec> = {}): FlatWorldSpec => ({
+const spec = (overrides: Partial<FlatWorldSpecInput> = {}): FlatWorldSpecInput => ({
   ...DEFAULT_FLAT_WORLD,
   radiusChunks: 0,
   worldId: makeWorldId('provider-test'),
@@ -32,7 +32,7 @@ const spec = (overrides: Partial<FlatWorldSpec> = {}): FlatWorldSpec => ({
 
 const expectInvalid = (
   provider: WorldProviderPort['Type'],
-  world: FlatWorldSpec,
+  world: FlatWorldSpecInput,
   field: InvalidWorldSpecError['field'],
 ): Effect.Effect<void, WorldProviderError> =>
   Effect.gen(function* () {
@@ -109,11 +109,11 @@ describe('GeneratedWorldProviderLayer', () => {
     Effect.gen(function* () {
       const provider = yield* WorldProviderPort
 
-      yield* expectInvalid(provider, spec({ worldId: '  ' as FlatWorldSpec['worldId'] }), 'worldId')
+      yield* expectInvalid(provider, spec({ worldId: '  ' }), 'worldId')
       yield* expectInvalid(provider, spec({ seed: Number.NaN }), 'seed')
       yield* expectInvalid(
         provider,
-        spec({ generation: 'unsupported' as FlatWorldSpec['generation'] }),
+        spec({ generation: 'unsupported' }),
         'generation',
       )
       yield* expectInvalid(provider, spec({ surfaceY: Number.POSITIVE_INFINITY }), 'surfaceY')
@@ -199,7 +199,7 @@ describe('GeneratedWorldProviderLayer', () => {
       }
       expect(same.value.chunks).toBe(first.value.chunks)
 
-      const variants: ReadonlyArray<FlatWorldSpec> = [
+      const variants: ReadonlyArray<FlatWorldSpecInput> = [
         spec({ worldId: makeWorldId('provider-test-other') }),
         spec({ seed: 1 }),
         spec({ generation: 'natural' }),

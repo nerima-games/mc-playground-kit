@@ -12,13 +12,12 @@ only boundaries that need this package's sparse world or lifecycle ownership.
 ## Package distribution
 
 The supported runtime import is the generated ESM entry point in `dist/index.js`;
-its declarations are emitted as `dist/index.d.ts`. The build bundles the
-source-only runtime exports from the mc-kernel, mc-sim, mc-physics, mc-save, and
-mc-worldgen packages, while keeping `effect` as a normal external dependency.
-Consumers therefore import the package root and do not depend on
+its declarations are emitted as `dist/index.d.ts`. The TypeScript release build
+emits the local entry point while keeping the upstream packages and `effect` as
+runtime dependencies. Consumers therefore import the package root and do not depend on
 checkout-relative TypeScript files.
 
-`pnpm test:package` imports the built entry point under Node 24 and checks the
+`pnpm package:verify` imports the packed entry point under Node 24 and checks the
 required runtime exports. It complements TypeScript declaration checking: a
 successful typecheck alone does not prove that a published ESM entry point can
 be loaded by Node.
@@ -26,8 +25,7 @@ be loaded by Node.
 ## Simulation stages and composition
 
 The root directly re-exports mc-sim's stage factories: `makeSimStages`,
-`makeSimStagesWithPhysics`, `makeSimStagesForPreview`,
-`makeSimStagesForPreviewWithPhysics`, and
+`makeSimStagesWithPhysics`, `makeSimStagesForPreview`, and
 `makeControllableSimStagesWithPhysics`. These factories remain upstream-owned;
 the kit does not wrap their `StageRegistration` values or duplicate the physics
 stage.
@@ -103,6 +101,16 @@ preloads a bounded square around the origin, so applications that need
 unbounded streaming or authoritative full-world ownership must add that policy
 at their composition root.
 
+`FlatWorldSpecInput` is the configuration boundary accepted by
+`WorldProviderService.openFlatWorld`: `worldId` and `generation` arrive as
+strings, while numeric fields retain their input values. Validation produces a
+branded `FlatWorldSpec` for the provider; invalid values fail with the typed
+`InvalidWorldSpecError` rather than reaching the runtime or throwing from a
+brand constructor. The input and output contracts are fixed by
+`test/generated-world-provider.test.ts` cases `validates world specs before
+touching the runtime` and `materializes the requested flat surface in
+generated chunks`.
+
 The local `ChunkWorld` below remains a finite immutable sparse-storage boundary
 for tests and small host-owned slices. The preview `WorldProvider` port remains
 an application lifecycle contract; the generated-world layers are the shipped
@@ -151,6 +159,17 @@ persistence. Playground launch and teardown do not implicitly load or write
 authoritative state.
 
 ## Domain values
+
+### Status effects
+
+`StatusEffectStateInput` is the persisted/input form of status state. Its
+effect `type` is a string at the boundary, and `tickStatusEffects` validates
+each value before applying the existing status transitions. Valid inputs return
+the normal `StatusEffectTick`; an unknown type fails with a named `TypeError`
+instead of the former indirect `undefined` property exception. The boundary
+and normal-transition contracts are fixed by `test/status-effect.test.ts`
+cases `validates the persisted shape and copies nested state` and `ticks
+pulses, timed attributes, and expiry`.
 
 normalizeLaunchOptions is pure and total:
 

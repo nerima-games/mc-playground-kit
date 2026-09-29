@@ -10,22 +10,33 @@ import {
 
 const fakeDom = () => {
   const children: Array<unknown> = []
-  const rawCanvas = {
-    parentNode: undefined as unknown,
+  const isRecord = (value: unknown): value is Record<PropertyKey, unknown> => (
+    typeof value === 'object' && value !== null
+  )
+  const isCanvas = (value: unknown): value is HTMLCanvasElement => (
+    isRecord(value) && 'parentNode' in value && typeof value['remove'] === 'function'
+  )
+  const isContainer = (value: unknown): value is HTMLElement => (
+    isRecord(value) && typeof value['appendChild'] === 'function'
+  )
+  const rawCanvas: { parentNode: HTMLElement | null; remove: () => void } = {
+    parentNode: null,
     remove() {
       const index = children.indexOf(canvas)
       if (index >= 0) children.splice(index, 1)
-      rawCanvas.parentNode = undefined
+      rawCanvas.parentNode = null
     },
   }
-  const canvas = rawCanvas as unknown as HTMLCanvasElement
+  if (!isCanvas(rawCanvas)) throw new Error('fake canvas shape is invalid')
+  const canvas = rawCanvas
   const container = {
     appendChild(child: HTMLCanvasElement) {
       children.push(child)
-      ;(child as unknown as { parentNode: unknown }).parentNode = container
+      if (!Reflect.set(child, 'parentNode', container)) throw new Error('fake canvas parent assignment failed')
       return child
     },
-  } as unknown as HTMLElement
+  }
+  if (!isContainer(container)) throw new Error('fake container shape is invalid')
   return { canvas, container, children }
 }
 
@@ -45,7 +56,7 @@ const fakeScheduler = () => {
     },
   }
   const runNext = (timestamp: number) => {
-    const next = callbacks.entries().next().value as [number, FrameRequestCallback] | undefined
+    const next = callbacks.entries().next().value
     if (next === undefined) return
     callbacks.delete(next[0])
     next[1](timestamp)
@@ -272,8 +283,8 @@ describe('browser preview', () => {
         },
         cancelAnimationFrame: (id: number) => { cancelled.push(id) },
       }
-      const originalWindow = (globalThis as { window?: unknown }).window
-      ;(globalThis as { window?: unknown }).window = fakeWindow
+      const originalWindow = Reflect.get(globalThis, 'window')
+      Reflect.set(globalThis, 'window', fakeWindow)
       try {
         const preview = yield* makeBrowserPreview({
           container: dom.container,
@@ -288,7 +299,8 @@ describe('browser preview', () => {
         yield* preview.stop
         expect(cancelled).toStrictEqual([1])
       } finally {
-        ;(globalThis as { window?: unknown }).window = originalWindow
+        if (originalWindow === undefined) Reflect.deleteProperty(globalThis, 'window')
+        else Reflect.set(globalThis, 'window', originalWindow)
       }
     }),
   )
@@ -364,21 +376,14 @@ describe('browser preview', () => {
     Effect.gen(function* () {
       const dom = fakeDom()
       const created: Array<string> = []
-      const rawCanvas = {
-        parentNode: undefined as unknown,
-        remove() {
-          rawCanvas.parentNode = undefined
-        },
-      }
-      const fakeCanvas = rawCanvas as unknown as HTMLCanvasElement
       const fakeDocument = {
         createElement: (tag: string) => {
           created.push(tag)
-          return fakeCanvas
+          return dom.canvas
         },
       }
-      const originalDocument = (globalThis as { document?: unknown }).document
-      ;(globalThis as { document?: unknown }).document = fakeDocument
+      const originalDocument = Reflect.get(globalThis, 'document')
+      Reflect.set(globalThis, 'document', fakeDocument)
       try {
         const preview = yield* makeBrowserPreview({
           container: dom.container,
@@ -387,9 +392,10 @@ describe('browser preview', () => {
         })
         const handle = yield* preview.start
         expect(created).toStrictEqual(['canvas'])
-        expect(handle.canvas).toBe(fakeCanvas)
+        expect(handle.canvas).toBe(dom.canvas)
       } finally {
-        ;(globalThis as { document?: unknown }).document = originalDocument
+        if (originalDocument === undefined) Reflect.deleteProperty(globalThis, 'document')
+        else Reflect.set(globalThis, 'document', originalDocument)
       }
     }),
   )

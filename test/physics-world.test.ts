@@ -3,6 +3,7 @@ import {
   blockIdOf,
   blockPosition,
 } from '@nerima-games/mc-kernel'
+import { HalfHeight } from '@nerima-games/mc-physics'
 import { type SimPhysicsConfig } from '@nerima-games/mc-sim'
 import { describe, expect, it } from 'vitest'
 import {
@@ -12,7 +13,7 @@ import {
 import { blockReaderOf, readBlockAt } from '../src/domain/block-world'
 import { resolveOptionsForBlockSource } from '../src/domain/physics-world'
 
-const halfHeight = 0.9 as SimPhysicsConfig['resolve']['halfHeight']
+const halfHeight = HalfHeight(0.9)
 type RelativeBounds = Exclude<
   ReturnType<NonNullable<SimPhysicsConfig['resolve']['blockShapeAt']>>,
   null

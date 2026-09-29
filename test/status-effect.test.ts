@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest'
-import type { DeltaTimeSecs } from '@nerima-games/mc-kernel'
 import {
   PLAYER_MAXIMUM_HEALTH_POINTS,
   POISON_DAMAGE_POINTS,
@@ -18,7 +17,6 @@ const effect = (
   pulseClockSecs = 0,
   amplifier?: number,
 ) => ({ type, remainingSecs, pulseClockSecs, ...(amplifier === undefined ? {} : { amplifier }) })
-const seconds = (value: number): DeltaTimeSecs => value as DeltaTimeSecs
 
 describe('status effects', () => {
   it('validates the persisted shape and copies nested state', () => {
@@ -115,7 +113,7 @@ describe('status effects', () => {
           effect('nausea', 2, 0, 3),
         ],
       },
-      seconds(1.1),
+      1.1,
     )
     expect(tick.poisonPulses).toBe(1)
     expect(tick.regenerationPulses).toBe(0)
@@ -145,7 +143,7 @@ describe('status effects', () => {
           effect('nausea', 1, 0),
         ],
       },
-      seconds(3),
+      3,
     )
     expect(expired.poisonPulses).toBe(1)
     expect(expired.regenerationPulses).toBe(0)
@@ -156,7 +154,7 @@ describe('status effects', () => {
 
     const sustainedHunger = tickStatusEffects(
       { effects: [effect('hunger', 3)] },
-      seconds(1),
+      1,
     )
     expect(sustainedHunger).toEqual({
       state: { effects: [effect('hunger', 2)] },
@@ -169,12 +167,12 @@ describe('status effects', () => {
 
     const amplified = tickStatusEffects(
       { effects: [effect('poison', 1, 0, 2), effect('regeneration', 3, 2, 1)] },
-      seconds(1),
+      1,
     )
     expect(amplified.poisonPulses).toBe(4)
     expect(amplified.regenerationPulses).toBe(2)
 
-    expect(tickStatusEffects({ effects: [] }, seconds(-1))).toEqual({
+    expect(tickStatusEffects({ effects: [] }, -1)).toEqual({
       state: { effects: [] },
       poisonPulses: 0,
       regenerationPulses: 0,
@@ -182,11 +180,11 @@ describe('status effects', () => {
       hungerExhaustion: 0,
       nauseaAmplifier: null,
     })
-    expect(tickStatusEffects({ effects: [] }, seconds(Number.NaN)).state).toEqual({ effects: [] })
+    expect(tickStatusEffects({ effects: [] }, Number.NaN).state).toEqual({ effects: [] })
     const invalidState = {
       effects: [{ type: 'invalid', remainingSecs: 1, pulseClockSecs: 0 }],
-    } as unknown as Parameters<typeof tickStatusEffects>[0]
-    expect(() => tickStatusEffects(invalidState, seconds(0))).toThrow(TypeError)
+    }
+    expect(() => tickStatusEffects(invalidState, 0)).toThrow(TypeError)
     expect(POISON_DAMAGE_POINTS).toBe(1)
     expect(REGENERATION_HEAL_POINTS).toBe(1)
     expect(PLAYER_MAXIMUM_HEALTH_POINTS).toBe(20)

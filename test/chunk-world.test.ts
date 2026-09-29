@@ -239,4 +239,18 @@ describe('chunk world', () => {
     expect(snapshot?.blocks).toBeInstanceOf(Uint16Array)
     expect(snapshot?.blocks).not.toBeInstanceOf(Uint8Array)
   })
+
+  it('rejects a chunk whose storage is shorter than its declared height', () => {
+    const coord = chunkCoord(0, 0)
+    const world = emptyChunkWorld(HEIGHT)
+    const malformed = {
+      ...world,
+      chunks: new Map([
+        [chunkKeyOf(coord), { coord, height: HEIGHT, blocks: new Uint16Array(0) }],
+      ]),
+    }
+
+    expect(() => blockAtChunkWorld(malformed, blockPosition(0, 0, 0))).toThrow(RangeError)
+    expect(() => blockWorldOfChunkWorld(malformed)).toThrow(RangeError)
+  })
 })

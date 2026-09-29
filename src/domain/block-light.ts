@@ -199,8 +199,10 @@ export const propagateBlockLight = (
   }
   seedBlockLight(context)
 
-  for (let cursor = 0; cursor < field.queue.length; cursor += GRID_STEP) {
-    spreadLightFrom(context, field.queue[cursor]!)
+  // Array iteration re-reads the length on each step, so cells enqueued by
+  // `spreadLightFrom` are still visited while draining the queue.
+  for (const [, entry] of field.queue.entries()) {
+    spreadLightFrom(context, entry)
   }
 
   return field.visible

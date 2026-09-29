@@ -113,6 +113,20 @@ export type FlatWorldSpec = {
   readonly radiusChunks: number
 }
 
+/**
+ * A launch spec as it arrives from configuration, before `worldId` and
+ * `generation` have been proven. Both fields are branded or narrowed in
+ * `FlatWorldSpec`, and the brand constructors reject a bad value by throwing,
+ * which is the wrong shape for input a user typed: the world provider wants to
+ * report which field was wrong instead. So a provider takes this and returns
+ * `InvalidWorldSpecError`; a caller that already holds a `FlatWorldSpec` is
+ * assignable to it unchanged.
+ */
+export type FlatWorldSpecInput = Omit<FlatWorldSpec, 'generation' | 'worldId'> & {
+  readonly generation: string
+  readonly worldId: string
+}
+
 export const DEFAULT_FLAT_WORLD: FlatWorldSpec = {
   generation: 'flat',
   radiusChunks: 1,

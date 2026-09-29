@@ -53,7 +53,7 @@
  */
 import type { CameraPoseSnapshot, DeltaTimeSecs } from '@nerima-games/mc-kernel'
 import { Cause, Context, Data, Effect } from 'effect'
-import type { FlatWorldSpec, SpawnKit } from '../domain/launch-options.js'
+import type { FlatWorldSpecInput, SpawnKit } from '../domain/launch-options.js'
 import type { ChunkPersistenceError } from '@nerima-games/mc-worldgen'
 
 // ---------------------------------------------------------------------------
@@ -84,8 +84,15 @@ export type WorldProviderError = InvalidWorldSpecError | ChunkPersistenceError
  * stand on", and mc-worldgen decides what that costs.
  */
 export type WorldProviderService = {
-  /** Generate and load the plate described by `spec`. Idempotent per world id. */
-  readonly openFlatWorld: (spec: FlatWorldSpec) => Effect.Effect<void, WorldProviderError>
+  /**
+   * Generate and load the plate described by `spec`. Idempotent per world id.
+   *
+   * Takes the unvalidated input, because a spec read from a config file is not
+   * a `FlatWorldSpec` yet and a blank world id has to come back as a typed
+   * `InvalidWorldSpecError` rather than as a throw from the brand constructor.
+   * A caller holding a validated spec is assignable to it unchanged.
+   */
+  readonly openFlatWorld: (spec: FlatWorldSpecInput) => Effect.Effect<void, WorldProviderError>
   /** Unload it. Must be safe to call on a world that was never opened. */
   readonly closeWorld: Effect.Effect<void, WorldProviderError>
 }

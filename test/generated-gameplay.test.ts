@@ -38,8 +38,8 @@ import {
 import {
   DEFAULT_FLAT_WORLD,
   DEFAULT_SPAWN_KIT,
-  type SpawnKit,
 } from '../src/domain/launch-options'
+import { firstOf } from './support/require-present'
 
 const clock: ClockService = {
   monotonicSecs: Effect.succeed(MonotonicTimeSecs(0)),
@@ -145,7 +145,9 @@ describe('generated gameplay', () => {
     Effect.gen(function* () {
       const oversized = {
         ...DEFAULT_SPAWN_KIT,
-        hotbar: Array.from({ length: INVENTORY_SLOT_COUNT + 1 }, () => DEFAULT_SPAWN_KIT.hotbar[0]!),
+        hotbar: Array.from({ length: INVENTORY_SLOT_COUNT + 1 }, () =>
+          firstOf(DEFAULT_SPAWN_KIT.hotbar, 'the default spawn kit hotbar'),
+        ),
       }
       const oversizedResult = yield* Effect.either(inventoryOfSpawnKit(oversized))
       expect(oversizedResult._tag).toBe('Left')
@@ -153,10 +155,12 @@ describe('generated gameplay', () => {
         expect(oversizedResult.left.slotIndex).toBe(INVENTORY_SLOT_COUNT)
       }
 
-      const invalidCount = {
-        ...DEFAULT_SPAWN_KIT,
-        hotbar: [{ ...DEFAULT_SPAWN_KIT.hotbar[0]!, count: 65 }],
-      } as unknown as SpawnKit
+      const invalidCount = structuredClone(DEFAULT_SPAWN_KIT)
+      Object.defineProperty(
+        firstOf(invalidCount.hotbar, 'the invalid-count spawn kit hotbar'),
+        'count',
+        { value: 65 },
+      )
       const invalidCountResult = yield* Effect.either(inventoryOfSpawnKit(invalidCount))
       expect(invalidCountResult._tag).toBe('Left')
       if (invalidCountResult._tag === 'Left') {
@@ -164,20 +168,19 @@ describe('generated gameplay', () => {
       }
 
       const nonErrorCause = { reason: 'non-error coercion failure' }
-      const nonErrorCauseKit = {
-        ...DEFAULT_SPAWN_KIT,
-        hotbar: [
-          {
-            ...DEFAULT_SPAWN_KIT.hotbar[0]!,
-            count: {
-              valueOf: (): never => {
-                // oxlint-disable-next-line no-throw-literal -- this deliberately tests non-Error cause normalization.
-                throw nonErrorCause
-              },
+      const nonErrorCauseKit = structuredClone(DEFAULT_SPAWN_KIT)
+      Object.defineProperty(
+        firstOf(nonErrorCauseKit.hotbar, 'the non-error-cause spawn kit hotbar'),
+        'count',
+        {
+          value: {
+            valueOf: (): never => {
+              // oxlint-disable-next-line no-throw-literal -- this deliberately tests non-Error cause normalization.
+              throw nonErrorCause
             },
           },
-        ],
-      } as unknown as SpawnKit
+        },
+      )
       const nonErrorCauseResult = yield* Effect.either(
         inventoryOfSpawnKit(nonErrorCauseKit),
       )
@@ -188,10 +191,8 @@ describe('generated gameplay', () => {
         )
       }
 
-      const malformed = {
-        ...DEFAULT_SPAWN_KIT,
-        hotbar: undefined,
-      } as unknown as SpawnKit
+      const malformed = structuredClone(DEFAULT_SPAWN_KIT)
+      Object.defineProperty(malformed, 'hotbar', { value: undefined })
       const malformedResult = yield* Effect.either(inventoryOfSpawnKit(malformed))
       expect(malformedResult._tag).toBe('Left')
       if (malformedResult._tag === 'Left') {

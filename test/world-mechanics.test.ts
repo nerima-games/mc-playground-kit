@@ -11,6 +11,7 @@ import {
 import { describe, expect, it } from '@effect/vitest'
 import { Effect, Ref } from 'effect'
 import { flattenStages } from '../src/domain/launch-options'
+import { firstOf } from './support/require-present'
 import {
   advanceWorldMechanics,
   emptyBlockWorld,
@@ -173,7 +174,7 @@ describe('world mechanics stage', () => {
       })
       const stages = yield* flattenStages([preview.module])
       expect(stages).toHaveLength(1)
-      const stage = stages[0]!
+      const stage = firstOf(stages, 'the flattened stage')
       expect(stage.id).toBe(StageId('world:mechanics:preview'))
 
       yield* stage.run(DeltaTimeSecs(1)).pipe(

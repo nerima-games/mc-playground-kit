@@ -52,7 +52,7 @@ export type RedstoneDevice =
 const isHorizontalRedstoneFace = (
   value: string,
 ): value is HorizontalRedstoneFace =>
-  HORIZONTAL_BLOCK_FACES.includes(value as HorizontalRedstoneFace)
+  HORIZONTAL_BLOCK_FACES.some((face) => face === value)
 
 const requireHorizontalFace = (facing: string): HorizontalRedstoneFace => {
   if (!isHorizontalRedstoneFace(facing)) {
@@ -75,7 +75,7 @@ export const redstoneRepeater = (
 
 export const redstoneComparator = (
   facing: string,
-  mode: RedstoneComparatorMode = 'compare',
+  mode: string = 'compare',
 ): RedstoneComparator => {
   if (mode !== 'compare' && mode !== 'subtract') {
     throw new RangeError(`Redstone comparator mode is invalid: ${mode}`)

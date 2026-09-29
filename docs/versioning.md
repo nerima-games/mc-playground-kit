@@ -3,7 +3,7 @@
 ## Runtime baseline
 
 - Node.js: >=24.0.0
-- pnpm: >=11.0.0
+- pnpm: >=11.24.0
 - package module format: ESM
 - package entry point: dist/index.js
 - declaration entry point: dist/index.d.ts
@@ -13,7 +13,7 @@ package.json and provisioned through Corepack in the Nix shell.
 
 ## Public surface
 
-The root export is the supported import path. Source files under src/ are
+The root export is the supported import path. Source files under `src/` are
 implementation details even though they are visible in a checkout. Every
 public type change must update the API documentation and its contract tests.
 
@@ -43,8 +43,8 @@ either runner dependency.
 
 The direct runtime pins are intentionally aligned with the published simulation,
 physics, save, and world-generation packages. The root package uses
-`mc-kernel@0.4.0`, `mc-sim@0.1.42`, `mc-physics@0.1.7`, `mc-save@0.2.2`, and
-`mc-worldgen@0.1.14`. The lockfile can still retain older kernel versions for
+`mc-kernel@0.7.0`, `mc-sim@0.4.2`, `mc-physics@0.2.2`, `mc-save@0.4.1`, and
+`mc-worldgen@0.4.0`. The lockfile can still retain older kernel versions for
 transitive compatibility, so it must not be treated as a single-version graph.
 Check any upgrade with `pnpm why @nerima-games/mc-kernel` and the upstream
 package dependency metadata before changing the pins.
