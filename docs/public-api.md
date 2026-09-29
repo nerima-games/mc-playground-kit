@@ -101,6 +101,16 @@ preloads a bounded square around the origin, so applications that need
 unbounded streaming or authoritative full-world ownership must add that policy
 at their composition root.
 
+`FlatWorldSpecInput` is the configuration boundary accepted by
+`WorldProviderService.openFlatWorld`: `worldId` and `generation` arrive as
+strings, while numeric fields retain their input values. Validation produces a
+branded `FlatWorldSpec` for the provider; invalid values fail with the typed
+`InvalidWorldSpecError` rather than reaching the runtime or throwing from a
+brand constructor. The input and output contracts are fixed by
+`test/generated-world-provider.test.ts` cases `validates world specs before
+touching the runtime` and `materializes the requested flat surface in
+generated chunks`.
+
 The local `ChunkWorld` below remains a finite immutable sparse-storage boundary
 for tests and small host-owned slices. The preview `WorldProvider` port remains
 an application lifecycle contract; the generated-world layers are the shipped
@@ -149,6 +159,17 @@ persistence. Playground launch and teardown do not implicitly load or write
 authoritative state.
 
 ## Domain values
+
+### Status effects
+
+`StatusEffectStateInput` is the persisted/input form of status state. Its
+effect `type` is a string at the boundary, and `tickStatusEffects` validates
+each value before applying the existing status transitions. Valid inputs return
+the normal `StatusEffectTick`; an unknown type fails with a named `TypeError`
+instead of the former indirect `undefined` property exception. The boundary
+and normal-transition contracts are fixed by `test/status-effect.test.ts`
+cases `validates the persisted shape and copies nested state` and `ticks
+pulses, timed attributes, and expiry`.
 
 normalizeLaunchOptions is pure and total:
 
