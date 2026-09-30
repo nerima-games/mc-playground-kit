@@ -1,5 +1,5 @@
 import { Cause, Data, Effect, Option, Ref } from 'effect'
-import { ClockPort, type ClockService } from '@nerima-games/mc-kernel'
+import { ClockPort, type ClockService, type Dimension } from '@nerima-games/mc-kernel'
 import {
   type CropService,
   INVENTORY_SLOT_COUNT,
@@ -42,7 +42,6 @@ import {
   type WorldRuntimePersistenceResult,
   persistBlockWorld,
 } from './world-runtime-persistence.js'
-import type { Dimension } from '@nerima-games/mc-worldgen'
 import type { WorldMechanicsState } from '../domain/world-mechanics.js'
 import type { WorldRuntimeSnapshotError } from './world-runtime-snapshot.js'
 

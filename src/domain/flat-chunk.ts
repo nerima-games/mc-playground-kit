@@ -1,9 +1,8 @@
-import { AIR_BLOCK_ID, type BlockId, blockIdOf } from '@nerima-games/mc-kernel'
+import { AIR_BLOCK_ID, type BlockId, type Dimension, blockIdOf } from '@nerima-games/mc-kernel'
 import {
   CHUNK_HEIGHT,
   CHUNK_SIZE_XZ,
   type Chunk,
-  type Dimension,
   blockIndex,
 } from '@nerima-games/mc-worldgen'
 
