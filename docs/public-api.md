@@ -22,6 +22,21 @@ required runtime exports. It complements TypeScript declaration checking: a
 successful typecheck alone does not prove that a published ESM entry point can
 be loaded by Node.
 
+The final release declaration diff against the `origin/main` build is limited to
+these five files:
+
+| Declaration | Added, removed, or changed surface |
+| --- | --- |
+| `dist/application/generated-gameplay.d.ts` | `Dimension` is imported from `@nerima-games/mc-kernel`, not `@nerima-games/mc-worldgen`. |
+| `dist/application/generated-world-provider.d.ts` | `Dimension` is imported from kernel; `FlatWorldSpec` and `FlatWorldSpecInput` are exposed through the `LaunchOptions` namespace. |
+| `dist/domain/end-portal-interaction.d.ts` | `Dimension` moves from worldgen to kernel. |
+| `dist/domain/flat-chunk.d.ts` | `Dimension` moves from worldgen to kernel. |
+| `dist/index.d.ts` | The canonical `addItemStack` helper is explicitly re-exported from kernel. |
+
+No declarations were added or removed outside this list. Declaration source maps
+and JavaScript output reflect the same import and export changes and do not add a
+separate public API.
+
 ## Simulation stages and composition
 
 The root directly re-exports mc-sim's stage factories: `makeSimStages`,
