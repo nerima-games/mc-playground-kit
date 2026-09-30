@@ -47,7 +47,7 @@ const sameLoadedCoords = (
 }
 
 // Worldgen's own Chunk.blocks is a plain, unregistry-gated Uint16Array
-// (mc-worldgen 0.4.0); kernelChunkFromBlocks widens each id through the
+// Worldgen's chunk buffer; kernelChunkFromBlocks widens each id through the
 // Kernel Chunk's own checked set() rather than a Uint8Array cast, which
 // Would silently narrow any id above 255.
 const kernelChunkOf = (value: GeneratedChunk): KernelChunk =>

@@ -296,14 +296,14 @@ describe('frames', () => {
       const handle = yield* launchPlayground({ modules: [probe.module] }).pipe(Effect.provide(fakes.layer))
 
       yield* handle.submitFrame(MonotonicTimeSecs(1.02))
-      yield* handle.submitFrame(MonotonicTimeSecs(1.05))
+      yield* handle.submitFrame(MonotonicTimeSecs(1.06))
       yield* Deferred.await(probe.reached)
 
       const seen = yield* probe.seen
       expect(seen).toHaveLength(3)
       expect(seen[0]).toBe(0.016)
-      expect(seen[1]).toBe(0.016)
-      expect(seen[2]).toBeCloseTo(0.03)
+      expect(seen[1]).toBe(0.025)
+      expect(seen[2]).toBe(0.025)
       expect(yield* fakes.framesRendered).toBe(3)
 
       yield* handle.stop
@@ -323,7 +323,7 @@ describe('frames', () => {
       yield* handle.submitFrame(MonotonicTimeSecs(31))
       yield* Deferred.await(probe.reached)
 
-      expect(yield* probe.seen).toStrictEqual([0.016, 0.016, 0.05])
+      expect(yield* probe.seen).toStrictEqual([0.016, 0.025, 0.025])
 
       yield* handle.stop
     }).pipe(Effect.provide(PlaygroundLayer)),
@@ -358,7 +358,7 @@ describe('frames', () => {
 
       const handle = yield* launchPlayground({ modules: [exploding] }).pipe(Effect.provide(fakes.layer))
       yield* handle.submitFrame(MonotonicTimeSecs(1.02))
-      yield* handle.submitFrame(MonotonicTimeSecs(1.04))
+      yield* handle.submitFrame(MonotonicTimeSecs(1.06))
       yield* Deferred.await(reached)
 
       expect(yield* handle.isRunning).toBe(true)
@@ -538,7 +538,7 @@ describe('relaunch', () => {
       const freshHandle = yield* launchPlayground({ modules: [fresh.module] }).pipe(Effect.provide(fakes.layer))
       yield* staleHandle.submitFrame(MonotonicTimeSecs(1.04))
       yield* freshHandle.submitFrame(MonotonicTimeSecs(1.02))
-      yield* freshHandle.submitFrame(MonotonicTimeSecs(1.04))
+      yield* freshHandle.submitFrame(MonotonicTimeSecs(1.06))
       yield* Deferred.await(fresh.reached)
 
       // Only the boot frame. The timestamp offered to the dead handle went nowhere.
@@ -546,8 +546,8 @@ describe('relaunch', () => {
       const freshSeen = yield* fresh.seen
       expect(freshSeen).toHaveLength(3)
       expect(freshSeen[0]).toBe(0.016)
-      expect(freshSeen[1]).toBe(0.016)
-      expect(freshSeen[2]).toBeCloseTo(0.02)
+      expect(freshSeen[1]).toBe(0.025)
+      expect(freshSeen[2]).toBe(0.025)
       // Frame counting restarted: the second preview is a new world, not a
       // continuation of the first.
       expect(yield* staleHandle.framesRendered).toBe(0)
@@ -591,9 +591,10 @@ describe('relaunch', () => {
       // ...and it is still a LIVE preview: a frame submitted after the stale
       // stop reaches a renderer that was never detached and a world that was
       // never closed.
-      yield* liveHandle.submitFrame(MonotonicTimeSecs(1.02))
+      yield* liveHandle.submitFrame(MonotonicTimeSecs(1.1))
+      yield* liveHandle.submitFrame(MonotonicTimeSecs(1.16))
       yield* Deferred.await(probe.reached)
-      expect(yield* liveHandle.framesRendered).toBe(2)
+      expect(yield* liveHandle.framesRendered).toBe(3)
 
       yield* liveHandle.stop
       expect(yield* liveHandle.isRunning).toBe(false)
