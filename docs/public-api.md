@@ -234,6 +234,12 @@ container transitions, including craft, previewCraft, createContainer, and
 transferContainerItem. This package composes those operations without copying
 their recipes or storage rules.
 
+Inventory slots use mc-kernel's canonical `ItemStack` shape: `item`, `count`,
+and resolved `components`. Empty slots are `undefined`; a zero-count stack,
+unresolved component patch, or durability sidecar is not accepted at this
+boundary. The save-facing sim snapshots use the same version-3 stack shape and
+reject legacy version-1 and version-2 envelopes.
+
 Anvil operations remain kernel-owned and are re-exported directly by the
 package root. Use `planAnvil`, `applyAnvil`, and the snapshot functions for repair,
 enchantment, naming, cost, and persistence transitions. `AnvilState` carries
@@ -569,7 +575,9 @@ PlaygroundHandle exposes:
 | stop | Idempotent teardown. |
 
 The first accepted timestamp uses FIRST_FRAME_DELTA_SECS, as defined by
-mc-sim. A stopped handle accepts no further work.
+mc-sim. The loop then advances fixed 0.05-second simulation ticks, each
+delivered to the handler as two 0.025-second physics substeps. A stopped handle
+accepts no further work.
 
 ## Injected ports
 

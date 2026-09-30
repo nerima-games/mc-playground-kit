@@ -4,9 +4,9 @@ The repository is intentionally small because each subsystem has one owner.
 
 | Area | Owner | This kit's role |
 | --- | --- | --- |
-| Branded coordinates, time, items, stages | mc-kernel | Consume the published vocabulary. |
+| Branded coordinates, time, items, stages | mc-kernel | Consume the published vocabulary, including canonical item stacks and fixed-duration time brands. |
 | Block registry, drops, placeable and replaceable capabilities | mc-kernel | Resolve block and item facts directly; do not copy the registry. |
-| Player, inventory, equipment, vitals, time, crop rules, frame loop | mc-sim | Expose a direct baseline through GameplayServicesLayer and delegate timing to makeGameLoop. |
+| Player, inventory, equipment, vitals, time, crop rules, frame loop | mc-sim | Expose a direct baseline through GameplayServicesLayer and delegate fixed-step timing to makeGameLoop. |
 | Generic entity roster lifecycle | mc-sim | Expose the typed EntityManagerLayer through gameplayServicesLayerWithEntities; callers own behavior types and entity mechanics. |
 | Player-pose block raycast and hit geometry | mc-sim / mc-physics | Delegate traversal and camera geometry; provide a BlockSource predicate (sparse map or point reader). |
 | Arrow block raycast and impact geometry | mc-sim / mc-physics | Delegate voxel traversal and apply a BlockSource predicate. |
