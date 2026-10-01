@@ -42,9 +42,8 @@ either runner dependency.
 ### Upstream synchronization
 
 The direct runtime pins are intentionally aligned with the published simulation,
-physics, save, and world-generation packages. The root package uses
-`mc-kernel@0.7.0`, `mc-sim@0.4.2`, `mc-physics@0.2.2`, `mc-save@0.4.1`, and
-`mc-worldgen@0.4.0`. The lockfile can still retain older kernel versions for
+physics, save, and world-generation packages. They are exact pins in
+`package.json`; the lockfile can still retain older kernel versions for
 transitive compatibility, so it must not be treated as a single-version graph.
 Check any upgrade with `pnpm why @nerima-games/mc-kernel` and the upstream
 package dependency metadata before changing the pins.

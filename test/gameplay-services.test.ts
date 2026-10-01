@@ -14,6 +14,7 @@ import {
   VehicleService,
   VitalsService,
   WeatherService,
+  itemStack,
 } from '@nerima-games/mc-sim'
 import {
   GameplayServicesLayer,
@@ -39,7 +40,7 @@ describe('GameplayServicesLayer', () => {
       const crops = yield* CropService
 
       expect(yield* inventory.add('dirt', 3)).toBe(0)
-      expect((yield* inventory.snapshot).slots[0]).toStrictEqual({ item: 'dirt', count: 3 })
+      expect((yield* inventory.snapshot).slots[0]).toStrictEqual(itemStack('dirt', 3))
       expect(yield* equipment.snapshot).toBeDefined()
       expect(yield* player.pose).toBeDefined()
       expect(yield* player.dimension).toBe('overworld')
@@ -61,11 +62,10 @@ describe('GameplayServicesLayer', () => {
       expect(yield* inventory.craft(craftGrid(1, 1, ['oak_log']))).toStrictEqual({
         _tag: 'Crafted',
         recipeId: 'mc-sim:oak-planks',
-        output: { item: 'oak_planks', count: 4 },
+        output: itemStack('oak_planks', 4),
       })
       expect((yield* inventory.snapshot).slots[0]).toStrictEqual({
-        item: 'oak_planks',
-        count: 4,
+        ...itemStack('oak_planks', 4),
       })
     }).pipe(Effect.provide(GameplayServicesLayer)),
   )

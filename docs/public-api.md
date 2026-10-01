@@ -22,6 +22,21 @@ required runtime exports. It complements TypeScript declaration checking: a
 successful typecheck alone does not prove that a published ESM entry point can
 be loaded by Node.
 
+The final release declaration diff against the `origin/main` build is limited to
+these five files:
+
+| Declaration | Added, removed, or changed surface |
+| --- | --- |
+| `dist/application/generated-gameplay.d.ts` | `Dimension` is imported from `@nerima-games/mc-kernel`, not `@nerima-games/mc-worldgen`. |
+| `dist/application/generated-world-provider.d.ts` | `Dimension` is imported from kernel; `FlatWorldSpec` and `FlatWorldSpecInput` are exposed through the `LaunchOptions` namespace. |
+| `dist/domain/end-portal-interaction.d.ts` | `Dimension` moves from worldgen to kernel. |
+| `dist/domain/flat-chunk.d.ts` | `Dimension` moves from worldgen to kernel. |
+| `dist/index.d.ts` | The canonical `addItemStack` helper is explicitly re-exported from kernel. |
+
+No declarations were added or removed outside this list. Declaration source maps
+and JavaScript output reflect the same import and export changes and do not add a
+separate public API.
+
 ## Simulation stages and composition
 
 The root directly re-exports mc-sim's stage factories: `makeSimStages`,
@@ -233,6 +248,12 @@ The supplied InventoryService also exposes mc-sim's published crafting and
 container transitions, including craft, previewCraft, createContainer, and
 transferContainerItem. This package composes those operations without copying
 their recipes or storage rules.
+
+Inventory slots use mc-kernel's canonical `ItemStack` shape: `item`, `count`,
+and resolved `components`. Empty slots are `undefined`; a zero-count stack,
+unresolved component patch, or durability sidecar is not accepted at this
+boundary. The save-facing sim snapshots use the same version-3 stack shape and
+reject legacy version-1 and version-2 envelopes.
 
 Anvil operations remain kernel-owned and are re-exported directly by the
 package root. Use `planAnvil`, `applyAnvil`, and the snapshot functions for repair,
@@ -569,7 +590,9 @@ PlaygroundHandle exposes:
 | stop | Idempotent teardown. |
 
 The first accepted timestamp uses FIRST_FRAME_DELTA_SECS, as defined by
-mc-sim. A stopped handle accepts no further work.
+mc-sim. The loop then advances fixed 0.05-second simulation ticks, each
+delivered to the handler as two 0.025-second physics substeps. A stopped handle
+accepts no further work.
 
 ## Injected ports
 

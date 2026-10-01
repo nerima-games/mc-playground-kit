@@ -45,7 +45,7 @@ const missingLocation: CropLocation = {
 const inventoryWith = (item: ItemType, count: number, slot = 0): Inventory => {
   const inventory = emptyInventory()
   const slots = [...inventory.slots]
-  slots[slot] = itemStack(item, count)
+  slots[slot] = count === 0 ? undefined : itemStack(item, count)
   return { slots }
 }
 
@@ -190,8 +190,15 @@ describe('crop interaction', () => {
     expect(unsupported.outcome).toBe('unsupported')
     expect(unknownSupport.outcome).toBe('unsupported')
     expect(wrongSoil.outcome).toBe('unsupported')
-    expect(insufficient.outcome).toBe('insufficient-seed')
+    expect(insufficient.outcome).toBe('empty-slot')
+    const malformedSeed = structuredClone(itemStack('wheat_seeds', 1))
+    Object.defineProperty(malformedSeed, 'count', { value: 0 })
+    const malformedInsufficient = plantCrop(
+      makeCropInteractionState(farmlandWorld(), { slots: [malformedSeed] }),
+      request,
+    )
     expect(invalidSlot.outcome).toBe('invalid-slot')
+    expect(malformedInsufficient.outcome).toBe('insufficient-seed')
   })
 
   it('advances live crops with bone meal and preserves every rejection state', () => {
@@ -272,8 +279,15 @@ describe('crop interaction', () => {
     expect(mature.outcome).toBe('mature')
     expect(emptySlot.outcome).toBe('empty-slot')
     expect(wrongItem.outcome).toBe('wrong-item')
-    expect(insufficient.outcome).toBe('insufficient-bone-meal')
+    expect(insufficient.outcome).toBe('empty-slot')
+    const malformedBoneMeal = structuredClone(itemStack('bone_meal', 1))
+    Object.defineProperty(malformedBoneMeal, 'count', { value: 0 })
+    const malformedInsufficient = advanceCropWithBoneMeal(
+      makeCropInteractionState(worldForCrops(firstCrop), { slots: [malformedBoneMeal] }, { crops: [firstCrop] }),
+      { inventorySlot: 0, location: firstLocation },
+    )
     expect(invalidSlot.outcome).toBe('invalid-slot')
+    expect(malformedInsufficient.outcome).toBe('insufficient-bone-meal')
     expect(emptySlot.state).toBe(emptyState)
   })
 

@@ -97,11 +97,11 @@ describe('browser preview', () => {
 
       animation.runNext(100)
       yield* Effect.yieldNow()
-      animation.runNext(116)
+      animation.runNext(150)
       yield* Effect.yieldNow()
-      animation.runNext(1_000)
+      animation.runNext(200)
       yield* Effect.yieldNow()
-      expect(frames).toStrictEqual([0.016, 0.016, 0.05])
+      expect(frames).toStrictEqual([0.025, 0.025, 0.025, 0.025])
 
       const second = yield* preview.restart
       expect(second).not.toBe(first)
@@ -142,18 +142,18 @@ describe('browser preview', () => {
       yield* preview.start
       animation.runNext(100)
       yield* Effect.yieldNow()
-      expect(frames).toStrictEqual([0.016])
+      expect(frames).toStrictEqual([])
       expect(animation.callbacks.size).toBe(1)
 
-      animation.runNext(116)
+      animation.runNext(150)
       yield* Effect.yieldNow()
-      expect(frames).toStrictEqual([0.016])
+      expect(frames).toStrictEqual([0.025])
       yield* Deferred.succeed(firstFrame, undefined)
       yield* Effect.yieldNow()
       expect(animation.callbacks.size).toBe(1)
-      animation.runNext(132)
+      animation.runNext(200)
       yield* Effect.yieldNow()
-      expect(frames).toStrictEqual([0.016, 0.016])
+      expect(frames).toStrictEqual([0.025, 0.025, 0.025, 0.025])
       yield* preview.stop
     }),
   )
@@ -180,10 +180,10 @@ describe('browser preview', () => {
       yield* preview.start
       animation.runNext(100)
       yield* Effect.yieldNow()
-      animation.runNext(116)
+      animation.runNext(150)
       yield* Effect.yieldNow()
 
-      expect(frames).toStrictEqual([0.016, 0.016])
+      expect(frames).toStrictEqual([0.025, 0.025])
       expect(frameReads).toBe(1)
       yield* preview.stop
     }),
@@ -211,6 +211,8 @@ describe('browser preview', () => {
 
       const handle = yield* preview.start
       animation.runNext(100)
+      yield* Effect.yieldNow()
+      animation.runNext(150)
       yield* Effect.yieldNow()
       yield* handle.stop
       expect(events).toStrictEqual(['frame:start', 'frame:release', 'runtime:stop'])
@@ -365,6 +367,8 @@ describe('browser preview', () => {
 
       const handle = yield* preview.start
       animation.runNext(100)
+      yield* Effect.yieldNow()
+      animation.runNext(150)
       yield* Effect.yieldNow()
       yield* Effect.yieldNow()
       expect(yield* handle.isRunning).toBe(false)

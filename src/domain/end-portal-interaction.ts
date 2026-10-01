@@ -3,6 +3,7 @@ import {
   type BlockId,
   type BlockPosition,
   type BlockPositionKey,
+  type Dimension,
   blockIdOf,
   blockPosition,
   blockPositionKeyOf,
@@ -10,7 +11,6 @@ import {
 import { type BlockWorld, blockAt, setBlockAt } from './block-world.js'
 import {
   type CompletedEndPortal,
-  type Dimension,
   type EndPortalFrameFacing,
   detectCompletedEndPortal,
 } from '@nerima-games/mc-worldgen'

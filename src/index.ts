@@ -25,7 +25,10 @@ export * from '@nerima-games/mc-kernel'
 export { isEmpty } from '@nerima-games/mc-sim'
 export { isEmpty as isEmptyBlockState } from '@nerima-games/mc-kernel'
 export * from '@nerima-games/mc-sim'
-// Kernel 0.7.0 absorbed vocabulary that this package's own local domain
+// Mc-kernel 0.8.0 now publishes the canonical item-stack inventory helper.
+// Select it explicitly where the broad sim re-export has the same name.
+export { addItemStack } from '@nerima-games/mc-kernel'
+// Kernel absorbs vocabulary that this package's own local domain
 // Modules already implement (redstone/fluid mechanics, PlayerPose). Explicit
 // Re-exports below pick the owner, this package's local module.
 export type {
@@ -108,7 +111,7 @@ export type {
   PlayerPose,
 } from './domain/block-targeting.js'
 
-// Kernel 0.7.0 also absorbed entity/inventory/equipment/weather/wither/
+// Kernel also absorbs entity/inventory/equipment/weather/wither/
 // Vehicle/recipe/vitals/hotbar/crafting/projectile/primed-tnt/smelting/
 // Statistics/enchantment/crop/brewing/damage vocabulary that mc-sim already
 // Owned as its own state-transition types before that release. Every one of

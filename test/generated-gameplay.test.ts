@@ -169,18 +169,12 @@ describe('generated gameplay', () => {
 
       const nonErrorCause = { reason: 'non-error coercion failure' }
       const nonErrorCauseKit = structuredClone(DEFAULT_SPAWN_KIT)
-      Object.defineProperty(
-        firstOf(nonErrorCauseKit.hotbar, 'the non-error-cause spawn kit hotbar'),
-        'count',
-        {
-          value: {
-            valueOf: (): never => {
-              // oxlint-disable-next-line no-throw-literal -- this deliberately tests non-Error cause normalization.
-              throw nonErrorCause
-            },
-          },
+      Object.defineProperty(nonErrorCauseKit, 'hotbar', {
+        get: () => {
+          // oxlint-disable-next-line no-throw-literal -- this deliberately tests non-Error cause normalization.
+          throw nonErrorCause
         },
-      )
+      })
       const nonErrorCauseResult = yield* Effect.either(
         inventoryOfSpawnKit(nonErrorCauseKit),
       )
