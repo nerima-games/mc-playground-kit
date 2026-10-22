@@ -10,7 +10,18 @@ minimumReleaseAgeExclude:
   - '@nerima-games/mc-save@0.3.0 || 0.4.1'
   - '@nerima-games/mc-noise@0.3.0 || 0.3.1'
   - '@nerima-games/mc-worldgen@0.2.0 || 0.3.1 || 0.3.2 || 0.4.0'
+  # pnpm audit flagged Vite 7.3.6, including GHSA-rq7h-c2jc-7f22 and GHSA-9jrq-w75r-8gcw.
+  # Vite 8.3.5 clears the findings; exclude it below during pnpm's default one-day release-age window.
+  - vite@8.3.5
 overrides:
   # GHSA-2v37-7h3g-55p8: transitive nanoid pulled in via vitest/@vitest/coverage-v8
   # -> vite -> postcss can loop indefinitely when a custom generator size is 0.
   nanoid: '>=3.3.18'
+  # pnpm audit flagged these locked versions; pin patched releases below:
+  # @vitest/mocker@4.1.11, launch-editor@2.14.1, shell-quote@1.10.0,
+  # and source-map-js@1.2.1.
+  '@vitest/mocker': 4.1.12
+  launch-editor: 2.14.2
+  shell-quote: 1.11.0
+  source-map-js: 1.2.2
+  vite: 8.3.5
