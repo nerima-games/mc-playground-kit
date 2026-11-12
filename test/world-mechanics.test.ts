@@ -198,6 +198,28 @@ describe('world mechanics stage', () => {
     }),
   )
 
+  it.effect('propagates invalid preview options as a typed failure', () =>
+    Effect.gen(function* () {
+      const result = yield* Effect.match(
+        makeWorldMechanicsPreview(emptyBlockWorld(), {
+          id: StageId('world:mechanics:invalid-preview'),
+          tickIntervalSecs: 0,
+        }),
+        {
+          onFailure: (error) => ({ _tag: 'Failure' as const, error }),
+          onSuccess: () => ({ _tag: 'Success' as const }),
+        },
+      )
+
+      expect(result._tag).toBe('Failure')
+      if (result._tag === 'Failure') {
+        expect(result.error[0]?.message).toBe(
+          'tickIntervalSecs must be a finite positive number',
+        )
+      }
+    }),
+  )
+
   it('rejects a non-positive or non-finite tick interval', () => {
     const state = Ref.unsafeMake(worldMechanicsStateFromWorld(emptyBlockWorld()))
     const zero = makeWorldMechanicsStage(state, {

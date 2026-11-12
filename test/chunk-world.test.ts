@@ -15,7 +15,9 @@ import { describe, expect, it } from 'vitest'
 import { Effect } from 'effect'
 import {
   blockAtChunkWorld,
+  blockReaderOfChunkWorld,
   blockWorldOfChunkWorld,
+  blockWorldOfChunkWorldEffect,
   chunkAt,
   emptyChunkWorld,
   encodeChunkAt,
@@ -248,6 +250,42 @@ describe('chunk world', () => {
     expect(invalid.reason.length).toBeGreaterThan(0)
   })
 
+  it('normalizes primitive and object causes thrown by a hostile encoded buffer', () => {
+    const world = worldOf(HEIGHT)
+    const encodedThatThrows = (cause: unknown): Uint8Array =>
+      new Proxy(new Uint8Array(24), {
+        get: (target, property, receiver) => {
+          if (property === 'length') {
+            return target.length
+          }
+          if (property === '0') {
+            throw cause
+          }
+          return Reflect.get(target, property, receiver)
+        },
+      })
+
+    const primitiveFailure = loadChunk(
+      world,
+      encodedThatThrows('decoder trap failure'),
+    )
+    expect(primitiveFailure).toEqual({
+      outcome: 'invalid',
+      reason: 'decoder trap failure',
+      world,
+    })
+
+    const objectFailure = loadChunk(
+      world,
+      encodedThatThrows({ reason: 'decoder trap failure' }),
+    )
+    expect(objectFailure).toEqual({
+      outcome: 'invalid',
+      reason: 'Chunk decoder rejected the encoded payload',
+      world,
+    })
+  })
+
   // BLOCK_REGISTRY's current maximum id is well under 255, so no id above
   // 255 can be constructed through kernel's validated chunk()/BlockState
   // surface using today's real roster — the same constraint kernel's own
@@ -287,7 +325,8 @@ describe('chunk world', () => {
   })
 
   it('rejects a chunk whose storage is shorter than its declared height', () => {
-    const coord = chunkCoord(0, 0)
+    const coord = chunkCoord(3, -2)
+    const position = blockPosition(coord.cx * CHUNK_SIZE_XZ, 0, coord.cz * CHUNK_SIZE_XZ)
     const world = worldOf(HEIGHT)
     const malformed = {
       ...world,
@@ -296,11 +335,102 @@ describe('chunk world', () => {
       ]),
     }
 
-    expect(blockAtChunkWorld(malformed, blockPosition(0, 0, 0))).toMatchObject({
+    expect(blockAtChunkWorld(malformed, position)).toMatchObject({
       _tag: 'ChunkWorldDataFailure',
       cause: { name: 'RangeError', message: expect.stringContaining('index 0') },
     })
     expect(blockWorldOfChunkWorld(malformed)).toMatchObject({
+      _tag: 'ChunkWorldDataFailure',
+      cause: { name: 'RangeError', message: expect.stringContaining('received 0') },
+    })
+    const effectResult = Effect.runSync(Effect.match(blockWorldOfChunkWorldEffect(malformed), {
+      onFailure: (failure) => ({ _tag: 'Failure' as const, failure }),
+      onSuccess: (blockWorld) => ({ _tag: 'Success' as const, blockWorld }),
+    }))
+    expect(effectResult._tag).toBe('Failure')
+    if (effectResult._tag === 'Failure') {
+      expect(effectResult.failure).toMatchObject({
+        _tag: 'ChunkWorldDataFailure',
+        cause: { name: 'RangeError', message: expect.stringContaining('received 0') },
+        coordinates: { cx: coord.cx, cz: coord.cz },
+      })
+    }
+  })
+
+  it('returns a typed failure when an in-range stored block read has no value', () => {
+    const world = worldOf(HEIGHT)
+    const coord = chunkCoord(0, 0)
+    const expectedLength = CHUNK_SIZE_XZ * CHUNK_SIZE_XZ * HEIGHT
+    const blocks = new Proxy(new Uint16Array(expectedLength), {
+      get: (target, property) => {
+        if (property === 'at') {
+          return (): undefined => undefined
+        }
+        return Reflect.get(target, property, target)
+      },
+    })
+    const malformed = {
+      ...world,
+      chunks: new Map([[chunkKeyOf(coord), { coord, height: HEIGHT, blocks }]]),
+    }
+
+    expect(blockWorldOfChunkWorld(malformed)).toMatchObject({
+      _tag: 'ChunkWorldDataFailure',
+      cause: {
+        name: 'RangeError',
+        message: expect.stringContaining('Chunk storage has no block at index 0'),
+      },
+    })
+  })
+
+  it('returns typed failures for invalid world bounds and malformed stored chunk data', () => {
+    const world = worldOf(HEIGHT)
+    const coord = chunkCoord(0, 0)
+    const position = blockPosition(0, 0, 0)
+    const invalidBounds = { ...world, height: 0 }
+    const boundsFailure = { _tag: 'ChunkWorldDataFailure' }
+
+    expect(blockAtChunkWorld(invalidBounds, position)).toMatchObject(boundsFailure)
+    expect(blockWorldOfChunkWorld(invalidBounds)).toMatchObject(boundsFailure)
+    expect(blockReaderOfChunkWorld(invalidBounds)).toMatchObject(boundsFailure)
+    expect(writeBlockAtChunkWorld(invalidBounds, position, blockIdOf('dirt'))).toMatchObject(boundsFailure)
+
+    const expectedLength = CHUNK_SIZE_XZ * CHUNK_SIZE_XZ * HEIGHT
+    const wrongHeight = {
+      ...world,
+      chunks: new Map([
+        [chunkKeyOf(coord), {
+          coord,
+          height: HEIGHT + 1,
+          blocks: new Uint16Array(CHUNK_SIZE_XZ * CHUNK_SIZE_XZ * (HEIGHT + 1)),
+        }],
+      ]),
+    }
+    const heightFailure = { _tag: 'ChunkWorldDataFailure' }
+
+    expect(blockAtChunkWorld(wrongHeight, position)).toMatchObject(heightFailure)
+    expect(blockWorldOfChunkWorld(wrongHeight)).toMatchObject(heightFailure)
+    expect(blockReaderOfChunkWorld(wrongHeight)).toMatchObject(heightFailure)
+    expect(writeBlockAtChunkWorld(wrongHeight, position, blockIdOf('dirt'))).toMatchObject(heightFailure)
+
+    const unknownBlocks = new Uint16Array(expectedLength)
+    unknownBlocks[0] = 255
+    const unknownBlockWorld = {
+      ...world,
+      chunks: new Map([[chunkKeyOf(coord), { coord, height: HEIGHT, blocks: unknownBlocks }]]),
+    }
+    const unknownBlockFailure = { _tag: 'ChunkWorldDataFailure' }
+
+    expect(blockAtChunkWorld(unknownBlockWorld, position)).toMatchObject(unknownBlockFailure)
+    expect(blockWorldOfChunkWorld(unknownBlockWorld)).toMatchObject(unknownBlockFailure)
+    expect(blockReaderOfChunkWorld(unknownBlockWorld)).toMatchObject(unknownBlockFailure)
+    expect(writeBlockAtChunkWorld(unknownBlockWorld, position, blockIdOf('dirt'))).toMatchObject(unknownBlockFailure)
+
+    const shortStorage = {
+      ...world,
+      chunks: new Map([[chunkKeyOf(coord), { coord, height: HEIGHT, blocks: new Uint16Array(0) }]]),
+    }
+    expect(writeBlockAtChunkWorld(shortStorage, position, blockIdOf('dirt'))).toMatchObject({
       _tag: 'ChunkWorldDataFailure',
       cause: { name: 'RangeError', message: expect.stringContaining('received 0') },
     })

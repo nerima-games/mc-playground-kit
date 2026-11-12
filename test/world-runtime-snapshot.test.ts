@@ -16,6 +16,7 @@ import { WorldProviderPort } from '../src/application/preview-ports'
 import {
   snapshotWorldRuntime,
   WorldRuntimeSnapshotError,
+  worldRuntimeSnapshotErrorFromChunkWorldFailure,
 } from '../src/application/world-runtime-snapshot'
 import { blockAtChunkWorld } from '../src/domain/chunk-world'
 import { DEFAULT_FLAT_WORLD } from '../src/domain/launch-options'
@@ -33,6 +34,36 @@ const openWorld = (surfaceY = DEFAULT_FLAT_WORLD.surfaceY) =>
   })
 
 describe('snapshotWorldRuntime', () => {
+  it('maps chunk materialization failures with and without coordinates', () => {
+    type ChunkWorldDataFailure = Parameters<typeof worldRuntimeSnapshotErrorFromChunkWorldFailure>[0]
+    const coordinateFailure: ChunkWorldDataFailure = {
+      _tag: 'ChunkWorldDataFailure',
+      cause: new RangeError('invalid chunk data'),
+      coordinates: { cx: 3, cz: -2 },
+    }
+    const noCoordinatesFailure: ChunkWorldDataFailure = {
+      _tag: 'ChunkWorldDataFailure',
+      cause: new RangeError('invalid world bounds'),
+      coordinates: {},
+    }
+
+    const withCoordinates = worldRuntimeSnapshotErrorFromChunkWorldFailure(coordinateFailure)
+    expect(withCoordinates).toMatchObject({
+      _tag: 'WorldRuntimeSnapshotError',
+      reason: 'invalid-chunk',
+      cx: 3,
+      cz: -2,
+    })
+
+    const withoutCoordinates = worldRuntimeSnapshotErrorFromChunkWorldFailure(noCoordinatesFailure)
+    expect(withoutCoordinates).toMatchObject({
+      _tag: 'WorldRuntimeSnapshotError',
+      reason: 'invalid-chunk',
+    })
+    expect(withoutCoordinates).not.toHaveProperty('cx')
+    expect(withoutCoordinates).not.toHaveProperty('cz')
+  })
+
   it.effect('materializes all loaded chunks and supports an empty runtime', () =>
     Effect.gen(function* () {
       yield* openWorld(4)

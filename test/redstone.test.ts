@@ -167,6 +167,13 @@ describe('redstone device definitions', () => {
     expect(redstoneRepeater('east', 0)._tag).toBe('Invalid')
     expect(redstoneRepeater('east', 5)._tag).toBe('Invalid')
     expect(redstoneComparator('east', 'invalid')._tag).toBe('Invalid')
+    const invalidFacingComparator = redstoneComparator('up', 'compare')
+    expect(invalidFacingComparator._tag).toBe('Invalid')
+    if (invalidFacingComparator._tag === 'Invalid') {
+      expect(invalidFacingComparator.error[0]?.message).toBe(
+        'Redstone device facing must be horizontal, received up',
+      )
+    }
     expect(redstoneObserver('diagonal')._tag).toBe('Invalid')
     const invalidRepeater = redstoneRepeater('up', 0)
     if (invalidRepeater._tag === 'Invalid') {

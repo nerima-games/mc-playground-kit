@@ -78,6 +78,28 @@ describe('gameplay preview', () => {
     }).pipe(Effect.provide(GameplayServicesLayer)),
   )
 
+  it.effect('propagates an invalid mechanics stage as a typed failure', () =>
+    Effect.gen(function* () {
+      const result = yield* Effect.match(
+        makeGameplayPreview(emptyBlockWorld(), {
+          id: GAMEPLAY_STAGE_IDS.worldMechanics,
+          tickIntervalSecs: 0,
+        }),
+        {
+          onFailure: (error) => ({ _tag: 'Failure' as const, error }),
+          onSuccess: () => ({ _tag: 'Success' as const }),
+        },
+      )
+
+      expect(result._tag).toBe('Failure')
+      if (result._tag === 'Failure') {
+        expect(result.error[0]?.message).toBe(
+          'tickIntervalSecs must be a finite positive number',
+        )
+      }
+    }).pipe(Effect.provide(GameplayServicesLayer)),
+  )
+
   it.effect('resolves the player against the supplied block world', () =>
     Effect.gen(function* () {
       const world = setBlockAt(emptyBlockWorld(), at(0), blockIdOf('stone'))

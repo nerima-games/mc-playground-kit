@@ -543,7 +543,12 @@ export {
 export * from './application/preview-ports.js'
 export * from './application/generated-world-provider.js'
 export * from './application/chunk-store-world-sync.js'
-export * from './application/world-runtime-snapshot.js'
+export {
+  WorldRuntimeSnapshotError,
+  snapshotChunk,
+  snapshotWorldRuntime,
+  type WorldRuntimeSnapshotReason,
+} from './application/world-runtime-snapshot.js'
 export * from './application/world-runtime-persistence.js'
 export * from './application/gameplay-preview.js'
 export * from './application/generated-gameplay.js'

@@ -250,8 +250,6 @@ export type BootBudgetVerdict = {
 
 type BootBudgetResult = ValidationResult<BootBudgetVerdict>
 
-type PhaseOverrunsResult = ValidationResult<ReadonlyArray<PhaseOverrun>>
-
 const measureTimings = (timings: ReadonlyArray<PhaseTiming>) => {
   const measured = new Map<BootPhase, number>()
   for (const timing of timings) {
@@ -267,65 +265,40 @@ const phaseOverrunOf = (
   phase: BootPhase,
   durationMillis: number,
   budgetMillis: DurationMillis,
-): ValidationResult<PhaseOverrun> => {
-  const durationResult = DurationMillis(durationMillis)
-  if (durationResult._tag === 'Invalid') {
-    return durationResult
-  }
-  const overByResult = DurationMillis(durationMillis - budgetMillis)
-  if (overByResult._tag === 'Invalid') {
-    return overByResult
-  }
-  return {
-    _tag: 'Valid',
-    value: {
-      budgetMillis,
-      durationMillis: durationResult.value,
-      overByMillis: overByResult.value,
-      phase,
-    },
-  }
-}
+): PhaseOverrun => ({
+  budgetMillis,
+  durationMillis: durationMillisFromInvariant(durationMillis),
+  overByMillis: durationMillisFromInvariant(durationMillis - budgetMillis),
+  phase,
+})
 
 const phaseOverrunAt = (
   measured: ReadonlyMap<BootPhase, number>,
   phase: BootPhase,
-): ValidationResult<PhaseOverrun | null> => {
+): PhaseOverrun | null => {
   const budgetMillis = BOOT_PHASE_BUDGET_MILLIS[phase]
-  if (!measured.has(phase)) {
-    return { _tag: 'Valid', value: null }
-  }
-  const durationMillis = measured.get(phase) ?? ZERO_DURATION_MILLIS
-  if (durationMillis <= budgetMillis) {
-    return { _tag: 'Valid', value: null }
+  const durationMillis = measured.get(phase)
+  if (typeof durationMillis === 'undefined' || durationMillis <= budgetMillis) {
+    return null
   }
   return phaseOverrunOf(phase, durationMillis, budgetMillis)
 }
 
-const phaseOverrunsOf = (measured: ReadonlyMap<BootPhase, number>): PhaseOverrunsResult => {
+const phaseOverrunsOf = (measured: ReadonlyMap<BootPhase, number>): ReadonlyArray<PhaseOverrun> => {
   const overrunPhases: Array<PhaseOverrun> = []
   for (const phase of BOOT_PHASE_ORDER) {
-    const overrunResult = phaseOverrunAt(measured, phase)
-    if (overrunResult._tag === 'Invalid') {
-      return overrunResult
-    }
-    if (overrunResult.value !== null) {
-      overrunPhases.push(overrunResult.value)
+    const overrun = phaseOverrunAt(measured, phase)
+    if (overrun !== null) {
+      overrunPhases.push(overrun)
     }
   }
-  return { _tag: 'Valid', value: overrunPhases }
+  return overrunPhases
 }
 
 const classifyMeasuredPhases = (measured: ReadonlyMap<BootPhase, number>) => {
   const missingPhases = BOOT_PHASE_ORDER.filter((phase) => !measured.has(phase))
-  const overrunResult = phaseOverrunsOf(measured)
-  if (overrunResult._tag === 'Invalid') {
-    return overrunResult
-  }
-  return {
-    _tag: 'Valid' as const,
-    value: { missingPhases, overrunPhases: overrunResult.value },
-  }
+  const overrunPhases = phaseOverrunsOf(measured)
+  return { missingPhases, overrunPhases }
 }
 
 /**
@@ -356,26 +329,20 @@ export const classifyBootTimings = (timings: ReadonlyArray<PhaseTiming>): BootBu
     return totalResult
   }
 
-  const phaseResult = classifyMeasuredPhases(measured)
-  if (phaseResult._tag === 'Invalid') {
-    return phaseResult
-  }
+  const phases = classifyMeasuredPhases(measured)
 
-  const overBudgetResult = DurationMillis(
+  const overBudgetMillis = durationMillisFromInvariant(
     Math.max(ZERO_DURATION_MILLIS, totalResult.value - BOOT_BUDGET_MILLIS),
   )
-  if (overBudgetResult._tag === 'Invalid') {
-    return overBudgetResult
-  }
 
   return {
     _tag: 'Valid',
     value: {
-      missingPhases: phaseResult.value.missingPhases,
-      overBudgetMillis: overBudgetResult.value,
-      overrunPhases: phaseResult.value.overrunPhases,
+      missingPhases: phases.missingPhases,
+      overBudgetMillis,
+      overrunPhases: phases.overrunPhases,
       totalMillis: totalResult.value,
-      withinBudget: totalResult.value <= BOOT_BUDGET_MILLIS && phaseResult.value.missingPhases.length === EMPTY_COUNT,
+      withinBudget: totalResult.value <= BOOT_BUDGET_MILLIS && phases.missingPhases.length === EMPTY_COUNT,
     },
   }
 }

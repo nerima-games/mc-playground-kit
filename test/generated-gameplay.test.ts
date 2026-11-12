@@ -38,6 +38,7 @@ import {
 import {
   DEFAULT_FLAT_WORLD,
   DEFAULT_SPAWN_KIT,
+  type HotbarSlot,
 } from '../src/domain/launch-options'
 import { firstOf } from './support/require-present'
 
@@ -195,6 +196,140 @@ describe('generated gameplay', () => {
         expect(nonErrorCauseResult.error.message).toContain(
           String(nonErrorCause),
         )
+      }
+
+      const primitiveCauseKit = structuredClone(DEFAULT_SPAWN_KIT)
+      Object.defineProperty(
+        firstOf(primitiveCauseKit.hotbar, 'the primitive-cause spawn kit hotbar'),
+        'count',
+        {
+          value: {
+            valueOf: (): never => {
+              // oxlint-disable-next-line no-throw-literal -- this deliberately tests primitive cause normalization.
+              throw 'primitive inventory failure'
+            },
+          },
+        },
+      )
+      const primitiveCauseResult = yield* resultOf(
+        inventoryOfSpawnKit(primitiveCauseKit),
+      )
+      expect(primitiveCauseResult._tag).toBe('Failure')
+      if (primitiveCauseResult._tag === 'Failure') {
+        expect(primitiveCauseResult.error.message).toBe('primitive inventory failure')
+      }
+
+      const functionCause = (): void => undefined
+      const functionCauseKit = structuredClone(DEFAULT_SPAWN_KIT)
+      Object.defineProperty(
+        firstOf(functionCauseKit.hotbar, 'the function-cause spawn kit hotbar'),
+        'count',
+        {
+          value: {
+            valueOf: (): never => {
+              // oxlint-disable-next-line no-throw-literal -- this deliberately tests function cause normalization.
+              throw functionCause
+            },
+          },
+        },
+      )
+      const functionCauseResult = yield* resultOf(
+        inventoryOfSpawnKit(functionCauseKit),
+      )
+      expect(functionCauseResult._tag).toBe('Failure')
+      if (functionCauseResult._tag === 'Failure') {
+        expect(functionCauseResult.error.message).toBe('[object Object]')
+      }
+
+      const indexThrowKit = structuredClone(DEFAULT_SPAWN_KIT)
+      Object.defineProperty(indexThrowKit.hotbar, '0', {
+        get: () => {
+          throw new Error('hotbar slot getter failed')
+        },
+      })
+      const indexThrowResult = yield* resultOf(inventoryOfSpawnKit(indexThrowKit))
+      expect(indexThrowResult._tag).toBe('Failure')
+      if (indexThrowResult._tag === 'Failure') {
+        expect(indexThrowResult.error.slotIndex).toBe(0)
+        expect(indexThrowResult.error.message).toBe('hotbar slot getter failed')
+      }
+
+      const sparseHotbar = new Proxy(new Array(1), {
+        get: (target, property, receiver) =>
+          property === '0' ? undefined : Reflect.get(target, property, receiver),
+        has: (target, property) =>
+          property === '0' ? true : Reflect.has(target, property),
+      })
+      const sparseResult = yield* resultOf(inventoryOfSpawnKit({
+        ...DEFAULT_SPAWN_KIT,
+        hotbar: sparseHotbar,
+      }))
+      expect(sparseResult._tag).toBe('Failure')
+      if (sparseResult._tag === 'Failure') {
+        expect(sparseResult.error.slotIndex).toBe(0)
+        expect(sparseResult.error.message).toBe('spawn kit hotbar slot is undefined')
+      }
+
+      const emptySlotResult = yield* resultOf(inventoryOfSpawnKit({
+        ...DEFAULT_SPAWN_KIT,
+        hotbar: new Array<HotbarSlot>(1),
+      }))
+      expect(emptySlotResult._tag).toBe('Success')
+      if (emptySlotResult._tag === 'Success') {
+        expect(emptySlotResult.value.slots[0]).toBeUndefined()
+      }
+
+      const lengthThrowHotbar = new Proxy([
+        firstOf(DEFAULT_SPAWN_KIT.hotbar, 'the length-failure hotbar'),
+      ], {
+        get: (target, property, receiver) => {
+          if (property === 'length') {
+            throw new Error('hotbar length getter failed')
+          }
+          return Reflect.get(target, property, receiver)
+        },
+      })
+      const lengthThrowResult = yield* resultOf(inventoryOfSpawnKit({
+        ...DEFAULT_SPAWN_KIT,
+        hotbar: lengthThrowHotbar,
+      }))
+      expect(lengthThrowResult._tag).toBe('Failure')
+      if (lengthThrowResult._tag === 'Failure') {
+        expect(lengthThrowResult.error.slotIndex).toBe(-1)
+        expect(lengthThrowResult.error.message).toBe('hotbar length getter failed')
+      }
+
+      const hasThrowHotbar = new Proxy([
+        firstOf(DEFAULT_SPAWN_KIT.hotbar, 'the membership-failure hotbar'),
+      ], {
+        has: (target, property) => {
+          if (property === '0') {
+            throw new Error('hotbar membership check failed')
+          }
+          return Reflect.has(target, property)
+        },
+      })
+      const hasThrowResult = yield* resultOf(inventoryOfSpawnKit({
+        ...DEFAULT_SPAWN_KIT,
+        hotbar: hasThrowHotbar,
+      }))
+      expect(hasThrowResult._tag).toBe('Failure')
+      if (hasThrowResult._tag === 'Failure') {
+        expect(hasThrowResult.error.slotIndex).toBe(0)
+        expect(hasThrowResult.error.message).toBe('hotbar membership check failed')
+      }
+
+      const hotbarGetterKit = structuredClone(DEFAULT_SPAWN_KIT)
+      Object.defineProperty(hotbarGetterKit, 'hotbar', {
+        get: () => {
+          throw new Error('spawn kit hotbar getter failed')
+        },
+      })
+      const hotbarGetterResult = yield* resultOf(inventoryOfSpawnKit(hotbarGetterKit))
+      expect(hotbarGetterResult._tag).toBe('Failure')
+      if (hotbarGetterResult._tag === 'Failure') {
+        expect(hotbarGetterResult.error.slotIndex).toBe(-1)
+        expect(hotbarGetterResult.error.message).toBe('spawn kit hotbar getter failed')
       }
 
       const malformed = structuredClone(DEFAULT_SPAWN_KIT)

@@ -7,11 +7,13 @@ import {
 import { Cause, Data, Effect } from 'effect'
 import {
   type ChunkWorld,
-  emptyChunkWorld,
+  blockWorldOfChunkWorldEffect,
   kernelChunkFromBlocks,
   storeChunkInChunkWorld,
 } from '../domain/chunk-world.js'
 import { type Chunk as KernelChunk, chunkCoord } from '@nerima-games/mc-kernel'
+
+const DEFAULT_WORLD_MIN_Y = 0
 
 export type WorldRuntimeSnapshotReason =
   | 'chunk-unloaded-during-snapshot'
@@ -30,6 +32,15 @@ const WorldRuntimeSnapshotErrorBase: new (
   // oxlint-disable-next-line new-cap -- Effect exposes TaggedError as a factory with a constructor-shaped name.
   Data.TaggedError('WorldRuntimeSnapshotError')<WorldRuntimeSnapshotErrorFields>
 export class WorldRuntimeSnapshotError extends WorldRuntimeSnapshotErrorBase {}
+
+type ChunkWorldDataFailure = Effect.Effect.Error<ReturnType<typeof blockWorldOfChunkWorldEffect>>
+
+export const worldRuntimeSnapshotErrorFromChunkWorldFailure = (
+  failure: ChunkWorldDataFailure,
+): WorldRuntimeSnapshotError => new WorldRuntimeSnapshotError({
+  reason: 'invalid-chunk',
+  ...failure.coordinates,
+})
 
 const coordKeyOf = (coord: { readonly cx: number; readonly cz: number }): string =>
   `${String(coord.cx)},${String(coord.cz)}`
@@ -97,12 +108,11 @@ const assertLoadedCoordsUnchanged = (
 const worldOfChunks = (
   chunks: ReadonlyArray<KernelChunk>,
 ): Effect.Effect<ChunkWorld, WorldRuntimeSnapshotError> => {
-  const emptyWorld = emptyChunkWorld(CHUNK_HEIGHT)
-  if ('_tag' in emptyWorld) {
-    return Effect.fail(new WorldRuntimeSnapshotError({ reason: 'invalid-chunk' }))
+  let world: ChunkWorld = {
+    chunks: new Map(),
+    height: CHUNK_HEIGHT,
+    minY: DEFAULT_WORLD_MIN_Y,
   }
-
-  let world = emptyWorld
   for (const value of chunks) {
     const { world: nextWorld } = storeChunkInChunkWorld(world, value)
     world = nextWorld

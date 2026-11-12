@@ -40,9 +40,15 @@ export type ChunkWorld = {
   readonly chunks: ReadonlyMap<ChunkKey, ChunkSnapshot>
 }
 
+type ChunkWorldDataCoordinates = {
+  readonly cx?: number
+  readonly cz?: number
+}
+
 type ChunkWorldDataFailure = {
   readonly _tag: 'ChunkWorldDataFailure'
   readonly cause: RangeError
+  readonly coordinates: ChunkWorldDataCoordinates
 }
 
 export type ChunkWorldBlockWriteResult =
@@ -92,9 +98,14 @@ export type ChunkWorldDecodeResult =
       readonly reason: string
     }
 
-const chunkWorldDataFailure = (message: string, cause: unknown): ChunkWorldDataFailure => ({
+const chunkWorldDataFailure = (
+  message: string,
+  cause: unknown,
+  coordinates: ChunkWorldDataCoordinates = {},
+): ChunkWorldDataFailure => ({
   _tag: 'ChunkWorldDataFailure',
   cause: new RangeError(message, { cause }),
+  coordinates,
 })
 
 const isChunkWorldDataFailure = (value: unknown): value is ChunkWorldDataFailure =>
@@ -150,18 +161,21 @@ const blockIdAt = ({ world, blocks, index, coord }: BlockIdAtOptions): BlockId |
     return chunkWorldDataFailure(
       `Chunk storage length mismatch at index ${String(index)}: expected ${String(expectedLength)}, received ${String(blocks.length)}`,
       { cx: coord.cx, cz: coord.cz, expectedLength, index, receivedLength: blocks.length },
+      { cx: coord.cx, cz: coord.cz },
     )
   }
   return Option.match(Option.fromNullable(blocks.at(index)), {
     onNone: () => chunkWorldDataFailure(
       `Chunk storage has no block at index ${String(index)} of ${String(expectedLength)}`,
       { cx: coord.cx, cz: coord.cz, expectedLength, index },
+      { cx: coord.cx, cz: coord.cz },
     ),
     onSome: (block) => {
       if (!isKnownBlockId(block)) {
         return chunkWorldDataFailure(
           `Chunk storage contains unknown block id ${String(block)} at index ${String(index)}`,
           { blockId: block, cx: coord.cx, cz: coord.cz, index },
+          { cx: coord.cx, cz: coord.cz },
         )
       }
       // oxlint-disable-next-line new-cap -- BlockId is the kernel's validated branded constructor.
@@ -262,6 +276,7 @@ const blockAtPositionWithinBounds = (
     return chunkWorldDataFailure(
       `Chunk height mismatch at ${String(coord.cx)},${String(coord.cz)}: expected ${String(world.height)}, received ${String(stored.height)}`,
       { cx: coord.cx, cz: coord.cz, expectedHeight: world.height, receivedHeight: stored.height },
+      { cx: coord.cx, cz: coord.cz },
     )
   }
 
@@ -316,6 +331,7 @@ const blockEntryAt = ({
         expectedHeight: world.height,
         receivedHeight: stored.height,
       },
+      { cx: stored.coord.cx, cz: stored.coord.cz },
     )
   }
   const index = (localX * CHUNK_SIZE_XZ + localZ) * stored.height + localY
@@ -414,6 +430,16 @@ export const blockWorldOfChunkWorld = (
   return blocks
 }
 
+export const blockWorldOfChunkWorldEffect = (
+  world: ChunkWorld,
+): Effect.Effect<BlockWorld, ChunkWorldDataFailure> => {
+  const result = blockWorldOfChunkWorld(world)
+  if (isChunkWorldDataFailure(result)) {
+    return Effect.fail(result)
+  }
+  return Effect.succeed(result)
+}
+
 export const blockReaderOfChunkWorld = (
   world: ChunkWorld,
 ): BlockReader | ChunkWorldDataFailure => {
@@ -478,6 +504,7 @@ const invalidStoredChunk = (
         expectedHeight: world.height,
         receivedHeight: stored.height,
       },
+      { cx: stored.coord.cx, cz: stored.coord.cz },
     ))
   }
   const expectedLength = expectedBlockCount(world.height)
@@ -485,6 +512,7 @@ const invalidStoredChunk = (
     return Option.some(chunkWorldDataFailure(
       `Chunk storage length mismatch at ${String(stored.coord.cx)},${String(stored.coord.cz)}: expected ${String(expectedLength)}, received ${String(stored.blocks.length)}`,
       { cx: stored.coord.cx, cz: stored.coord.cz, expectedLength, receivedLength: stored.blocks.length },
+      { cx: stored.coord.cx, cz: stored.coord.cz },
     ))
   }
   return invalidStoredBlock(world, stored, expectedLength)
@@ -496,6 +524,10 @@ const previousBlockIdOf = (
   stored: ChunkSnapshot | undefined,
 ): BlockId | ChunkWorldDataFailure => {
   if (stored) {
+    const invalidStorage = invalidStoredChunk(world, stored)
+    if (Option.isSome(invalidStorage)) {
+      return invalidStorage.value
+    }
     return blockAtChunkWorld(world, position)
   }
 
@@ -563,12 +595,6 @@ const writeBlockToExistingWorld = (
 ): ChunkWorldBlockWriteResult => {
   const location = chunkLocationOf(position)
   const stored = world.chunks.get(location.key)
-  if (stored) {
-    const invalidStorage = invalidStoredChunk(world, stored)
-    if (Option.isSome(invalidStorage)) {
-      return invalidStorage.value
-    }
-  }
   const previousBlockId = previousBlockIdOf(world, position, stored)
   if (isChunkWorldDataFailure(previousBlockId)) {
     return previousBlockId

@@ -5,7 +5,7 @@ import {
 } from '@nerima-games/mc-worldgen'
 import {
   type ChunkWorld,
-  blockWorldOfChunkWorld,
+  blockWorldOfChunkWorldEffect,
   removeChunkFromChunkWorld,
   storeChunkInChunkWorld,
 } from '../domain/chunk-world.js'
@@ -14,6 +14,7 @@ import {
   WorldRuntimeSnapshotError,
   snapshotChunk,
   snapshotWorldRuntime,
+  worldRuntimeSnapshotErrorFromChunkWorldFailure,
 } from './world-runtime-snapshot.js'
 import { type BlockWorld } from '../domain/block-world.js'
 import { chunkKeyOf } from '@nerima-games/mc-kernel'
@@ -36,23 +37,8 @@ type RefreshWorldContext = {
 
 const blockWorldFromChunkWorld = (
   world: ChunkWorld,
-): Effect.Effect<BlockWorld, WorldRuntimeSnapshotError> => {
-  const blockWorld = blockWorldOfChunkWorld(world)
-  if ('_tag' in blockWorld) {
-    const detail = blockWorld.cause.cause
-    const coordinates: { cx?: number; cz?: number } = {}
-    if (
-      typeof detail === 'object' && detail !== null &&
-      'cx' in detail && typeof detail.cx === 'number' &&
-      'cz' in detail && typeof detail.cz === 'number'
-    ) {
-      coordinates.cx = detail.cx
-      coordinates.cz = detail.cz
-    }
-    return Effect.fail(new WorldRuntimeSnapshotError({ reason: 'invalid-chunk', ...coordinates }))
-  }
-  return Effect.succeed(blockWorld)
-}
+): Effect.Effect<BlockWorld, WorldRuntimeSnapshotError> =>
+  Effect.mapError(blockWorldOfChunkWorldEffect(world), worldRuntimeSnapshotErrorFromChunkWorldFailure)
 
 const applyDirtyBatch = (
   context: RefreshWorldContext,
