@@ -46,6 +46,12 @@ const clock: ClockService = {
   wallClockEpochMillis: Effect.succeed(EpochMillis(0)),
 }
 
+const resultOf = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  Effect.match(effect, {
+    onFailure: (error) => ({ _tag: 'Failure' as const, error }),
+    onSuccess: (value) => ({ _tag: 'Success' as const, value }),
+  })
+
 const hostLayer = Layer.mergeAll(
   GameplayServicesLayer,
   GeneratedWorldProviderLayer({ terrain: { decorate: false } }),
@@ -110,7 +116,7 @@ describe('generated gameplay', () => {
       const runtime: WorldRuntimeService = {
         current: Effect.succeed(Option.none()),
       }
-      const result = yield* Effect.either(
+      const result = yield* resultOf(
         launchGeneratedPlayground().pipe(
           Effect.provide(
             Layer.mergeAll(
@@ -133,9 +139,9 @@ describe('generated gameplay', () => {
         ),
       )
 
-      expect(result._tag).toBe('Left')
-      if (result._tag === 'Left') {
-        expect(result.left).toBeInstanceOf(GeneratedGameplayWorldUnavailableError)
+      expect(result._tag).toBe('Failure')
+      if (result._tag === 'Failure') {
+        expect(result.error).toBeInstanceOf(GeneratedGameplayWorldUnavailableError)
       }
       expect(yield* Ref.get(events)).toEqual(['world.open', 'world.close'])
     }),
@@ -149,10 +155,10 @@ describe('generated gameplay', () => {
           firstOf(DEFAULT_SPAWN_KIT.hotbar, 'the default spawn kit hotbar'),
         ),
       }
-      const oversizedResult = yield* Effect.either(inventoryOfSpawnKit(oversized))
-      expect(oversizedResult._tag).toBe('Left')
-      if (oversizedResult._tag === 'Left') {
-        expect(oversizedResult.left.slotIndex).toBe(INVENTORY_SLOT_COUNT)
+      const oversizedResult = yield* resultOf(inventoryOfSpawnKit(oversized))
+      expect(oversizedResult._tag).toBe('Failure')
+      if (oversizedResult._tag === 'Failure') {
+        expect(oversizedResult.error.slotIndex).toBe(INVENTORY_SLOT_COUNT)
       }
 
       const invalidCount = structuredClone(DEFAULT_SPAWN_KIT)
@@ -161,10 +167,10 @@ describe('generated gameplay', () => {
         'count',
         { value: 65 },
       )
-      const invalidCountResult = yield* Effect.either(inventoryOfSpawnKit(invalidCount))
-      expect(invalidCountResult._tag).toBe('Left')
-      if (invalidCountResult._tag === 'Left') {
-        expect(invalidCountResult.left.slotIndex).toBe(0)
+      const invalidCountResult = yield* resultOf(inventoryOfSpawnKit(invalidCount))
+      expect(invalidCountResult._tag).toBe('Failure')
+      if (invalidCountResult._tag === 'Failure') {
+        expect(invalidCountResult.error.slotIndex).toBe(0)
       }
 
       const nonErrorCause = { reason: 'non-error coercion failure' }
@@ -181,22 +187,22 @@ describe('generated gameplay', () => {
           },
         },
       )
-      const nonErrorCauseResult = yield* Effect.either(
+      const nonErrorCauseResult = yield* resultOf(
         inventoryOfSpawnKit(nonErrorCauseKit),
       )
-      expect(nonErrorCauseResult._tag).toBe('Left')
-      if (nonErrorCauseResult._tag === 'Left') {
-        expect(nonErrorCauseResult.left.message).toContain(
+      expect(nonErrorCauseResult._tag).toBe('Failure')
+      if (nonErrorCauseResult._tag === 'Failure') {
+        expect(nonErrorCauseResult.error.message).toContain(
           String(nonErrorCause),
         )
       }
 
       const malformed = structuredClone(DEFAULT_SPAWN_KIT)
       Object.defineProperty(malformed, 'hotbar', { value: undefined })
-      const malformedResult = yield* Effect.either(inventoryOfSpawnKit(malformed))
-      expect(malformedResult._tag).toBe('Left')
-      if (malformedResult._tag === 'Left') {
-        expect(malformedResult.left.slotIndex).toBe(-1)
+      const malformedResult = yield* resultOf(inventoryOfSpawnKit(malformed))
+      expect(malformedResult._tag).toBe('Failure')
+      if (malformedResult._tag === 'Failure') {
+        expect(malformedResult.error.slotIndex).toBe(-1)
       }
     }),
   )
@@ -208,7 +214,7 @@ describe('generated gameplay', () => {
         Ref.update(events, (current) => [...current, event])
       const provider: WorldProviderService = {
         closeWorld: record('world.close').pipe(
-          Effect.zipRight(
+          Effect.andThen(
             Effect.fail(
               new InvalidWorldSpecError({
                 field: 'worldId',
@@ -223,7 +229,7 @@ describe('generated gameplay', () => {
       const runtime: WorldRuntimeService = {
         current: Effect.succeed(Option.none()),
       }
-      const result = yield* Effect.either(
+      const result = yield* resultOf(
         launchGeneratedPlayground().pipe(
           Effect.provide(
             Layer.mergeAll(
@@ -246,9 +252,9 @@ describe('generated gameplay', () => {
         ),
       )
 
-      expect(result._tag).toBe('Left')
-      if (result._tag === 'Left') {
-        expect(result.left).toBeInstanceOf(GeneratedGameplayWorldUnavailableError)
+      expect(result._tag).toBe('Failure')
+      if (result._tag === 'Failure') {
+        expect(result.error).toBeInstanceOf(GeneratedGameplayWorldUnavailableError)
       }
       expect(yield* Ref.get(events)).toEqual(['world.open', 'world.close'])
     }),

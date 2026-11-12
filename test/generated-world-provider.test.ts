@@ -23,6 +23,12 @@ import {
   type WorldProviderError,
 } from '../src/application/preview-ports'
 
+const resultOf = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  Effect.match(effect, {
+    onFailure: (error) => ({ _tag: 'Failure' as const, error }),
+    onSuccess: (value) => ({ _tag: 'Success' as const, value }),
+  })
+
 const spec = (overrides: Partial<FlatWorldSpecInput> = {}): FlatWorldSpecInput => ({
   ...DEFAULT_FLAT_WORLD,
   radiusChunks: 0,
@@ -36,15 +42,15 @@ const expectInvalid = (
   field: InvalidWorldSpecError['field'],
 ): Effect.Effect<void, WorldProviderError> =>
   Effect.gen(function* () {
-    const result = yield* Effect.either(provider.openFlatWorld(world))
-    if (result._tag === 'Right') {
+    const result = yield* resultOf(provider.openFlatWorld(world))
+    if (result._tag === 'Success') {
       throw new Error(`expected ${field} validation to fail`)
     }
-    expect(result.left).toBeInstanceOf(InvalidWorldSpecError)
-    if (result.left._tag !== 'InvalidWorldSpecError') {
-      throw new Error(`expected InvalidWorldSpecError, received ${result.left._tag}`)
+    expect(result.error).toBeInstanceOf(InvalidWorldSpecError)
+    if (result.error._tag !== 'InvalidWorldSpecError') {
+      throw new Error(`expected InvalidWorldSpecError, received ${result.error._tag}`)
     }
-    expect(result.left.field).toBe(field)
+    expect(result.error.field).toBe(field)
   })
 
 const cleanupFailureStorageLayer = Layer.effect(
@@ -267,11 +273,11 @@ describe('GeneratedWorldProviderLayer', () => {
       const active = spec({ worldId: makeWorldId('active-provider-test') })
 
       yield* provider.openFlatWorld(active)
-      const result = yield* Effect.either(
+      const result = yield* resultOf(
         provider.openFlatWorld(spec({ worldId: makeWorldId('replacement-load-failure-test') })),
       )
 
-      expect(result._tag).toBe('Left')
+      expect(result._tag).toBe('Failure')
       const current = yield* runtime.current
       if (Option.isNone(current)) {
         throw new Error('active world was lost after replacement load failure')
@@ -293,19 +299,19 @@ describe('GeneratedWorldProviderLayer', () => {
       const active = spec({ worldId: makeWorldId('active-unload-failure-test') })
 
       yield* provider.openFlatWorld(active)
-      const result = yield* Effect.either(
+      const result = yield* resultOf(
         provider.openFlatWorld(spec({ worldId: makeWorldId('replacement-unload-failure-test') })),
       )
 
-      expect(result._tag).toBe('Left')
-      if (result._tag !== 'Left') {
+      expect(result._tag).toBe('Failure')
+      if (result._tag !== 'Failure') {
         throw new Error('expected replacement unload failure')
       }
-      expect(result.left._tag).toBe('StorageError')
-      if (result.left._tag !== 'StorageError') {
-        throw new Error(`expected StorageError, received ${result.left._tag}`)
+      expect(result.error._tag).toBe('StorageError')
+      if (result.error._tag !== 'StorageError') {
+        throw new Error(`expected StorageError, received ${result.error._tag}`)
       }
-      expect(result.left.operation).toBe('old-unload')
+      expect(result.error.operation).toBe('old-unload')
       const current = yield* runtime.current
       if (Option.isNone(current)) {
         throw new Error('active world was lost after replacement unload failure')
@@ -327,19 +333,19 @@ describe('GeneratedWorldProviderLayer', () => {
       const active = spec({ worldId: makeWorldId('active-cleanup-recovery-test') })
 
       yield* provider.openFlatWorld(active)
-      const result = yield* Effect.either(
+      const result = yield* resultOf(
         provider.openFlatWorld(spec({ worldId: makeWorldId('replacement-cleanup-recovery-test') })),
       )
 
-      expect(result._tag).toBe('Left')
-      if (result._tag !== 'Left') {
+      expect(result._tag).toBe('Failure')
+      if (result._tag !== 'Failure') {
         throw new Error('expected old cleanup failure')
       }
-      expect(result.left._tag).toBe('StorageError')
-      if (result.left._tag !== 'StorageError') {
-        throw new Error(`expected StorageError, received ${result.left._tag}`)
+      expect(result.error._tag).toBe('StorageError')
+      if (result.error._tag !== 'StorageError') {
+        throw new Error(`expected StorageError, received ${result.error._tag}`)
       }
-      expect(result.left.operation).toBe('old-unload')
+      expect(result.error.operation).toBe('old-unload')
       const current = yield* runtime.current
       if (Option.isNone(current)) {
         throw new Error('active world was lost after cleanup recovery')
@@ -358,13 +364,13 @@ describe('GeneratedWorldProviderLayer', () => {
     Effect.gen(function* () {
       const provider = yield* WorldProviderPort
       const runtime = yield* WorldRuntimePort
-      const result = yield* Effect.either(provider.openFlatWorld(spec({ worldId: makeWorldId('failing-provider-test') })))
+      const result = yield* resultOf(provider.openFlatWorld(spec({ worldId: makeWorldId('failing-provider-test') })))
 
-      expect(result._tag).toBe('Left')
-      if (result._tag !== 'Left') {
+      expect(result._tag).toBe('Failure')
+      if (result._tag !== 'Failure') {
         throw new Error('expected storage failure')
       }
-      expect(result.left._tag).toBe('StorageError')
+      expect(result.error._tag).toBe('StorageError')
       expect(Option.isNone(yield* runtime.current)).toBe(true)
       yield* provider.closeWorld
     }).pipe(
@@ -382,17 +388,17 @@ describe('GeneratedWorldProviderLayer', () => {
       const runtime = yield* WorldRuntimePort
 
       yield* provider.openFlatWorld(spec({ worldId: makeWorldId('close-failure-provider-test') }))
-      const result = yield* Effect.either(provider.closeWorld)
+      const result = yield* resultOf(provider.closeWorld)
 
-      expect(result._tag).toBe('Left')
-      if (result._tag !== 'Left') {
+      expect(result._tag).toBe('Failure')
+      if (result._tag !== 'Failure') {
         throw new Error('expected close persistence failure')
       }
-      expect(result.left._tag).toBe('StorageError')
-      if (result.left._tag !== 'StorageError') {
-        throw new Error(`expected StorageError, received ${result.left._tag}`)
+      expect(result.error._tag).toBe('StorageError')
+      if (result.error._tag !== 'StorageError') {
+        throw new Error(`expected StorageError, received ${result.error._tag}`)
       }
-      expect(result.left.operation).toBe('cleanup')
+      expect(result.error.operation).toBe('cleanup')
       expect(Option.isSome(yield* runtime.current)).toBe(true)
     }).pipe(
       Effect.provide(
@@ -407,21 +413,21 @@ describe('GeneratedWorldProviderLayer', () => {
     Effect.gen(function* () {
       const provider = yield* WorldProviderPort
       const runtime = yield* WorldRuntimePort
-      const result = yield* Effect.either(
+      const result = yield* resultOf(
         provider.openFlatWorld(
           spec({ worldId: makeWorldId('cleanup-failure-provider-test'), radiusChunks: 1 }),
         ),
       )
 
-      expect(result._tag).toBe('Left')
-      if (result._tag !== 'Left') {
+      expect(result._tag).toBe('Failure')
+      if (result._tag !== 'Failure') {
         throw new Error('expected load failure')
       }
-      expect(result.left._tag).toBe('StorageError')
-      if (result.left._tag !== 'StorageError') {
-        throw new Error(`expected StorageError, received ${result.left._tag}`)
+      expect(result.error._tag).toBe('StorageError')
+      if (result.error._tag !== 'StorageError') {
+        throw new Error(`expected StorageError, received ${result.error._tag}`)
       }
-      expect(result.left.operation).toBe('load')
+      expect(result.error.operation).toBe('load')
       expect(Option.isNone(yield* runtime.current)).toBe(true)
     }).pipe(
       Effect.provide(

@@ -1,5 +1,5 @@
 /* oxlint-disable curly, func-names, init-declarations, max-statements, no-magic-numbers, no-ternary, no-undefined, prefer-const, sort-keys -- Lifecycle orchestration is intentionally kept linear; splitting it obscures rollback order. */
-import { Cause, Deferred, Effect, Either, Option, Ref } from 'effect'
+import { Cause, Deferred, Effect, Option, Ref } from 'effect'
 import { type DeltaTimeSecs, MonotonicTimeSecs } from '@nerima-games/mc-kernel'
 import { type GameLoopApi, makeGameLoop } from '@nerima-games/mc-sim'
 import { requestNextFrameIfActive } from './frame-scheduling.js'
@@ -115,9 +115,14 @@ export const makeBrowserPreview = (
       let stopped = false
 
       const registerCleanup = (cleanup: () => void) => cleanups.push(cleanup)
-      const runCleanup = (cleanup: () => void) => {
-        try { cleanup() } catch (cause) { rollbackFailures.push(cause) }
-      }
+      const runCleanup = (cleanup: () => void) =>
+        Effect.match(
+          Effect.try({ try: cleanup, catch: (cause) => cause }),
+          {
+            onFailure: (cause) => { rollbackFailures.push(cause) },
+            onSuccess: () => undefined,
+          },
+        )
       const scheduler = options.scheduler ?? browserScheduler()
 
       const stop = Effect.gen(function* () {
@@ -139,7 +144,7 @@ export const makeBrowserPreview = (
             onSuccess: () => undefined,
           })
         }
-        for (const cleanup of [...cleanups].reverse()) runCleanup(cleanup)
+        for (const cleanup of [...cleanups].reverse()) yield* runCleanup(cleanup)
         if (ownedCanvas && canvas.parentNode === options.container) canvas.remove()
         if (rollbackFailures.length > 0) {
           return yield* Effect.fail({
@@ -155,21 +160,27 @@ export const makeBrowserPreview = (
         registerCleanup(() => options.signal?.removeEventListener('abort', onAbort))
       }
 
-      const started = yield* Effect.either(options.startRuntime({
-        container: options.container,
-        canvas,
-        signal: controller.signal,
-        onCleanup: registerCleanup,
-      }))
-      if (Either.isLeft(started)) {
+      const started = yield* Effect.match(
+        options.startRuntime({
+          container: options.container,
+          canvas,
+          signal: controller.signal,
+          onCleanup: registerCleanup,
+        }),
+        {
+          onFailure: (error) => ({ _tag: 'Failure' as const, error }),
+          onSuccess: (value) => ({ _tag: 'Success' as const, value }),
+        },
+      )
+      if (started._tag === 'Failure') {
         yield* Effect.ignore(stop)
         return yield* Effect.fail({
           _tag: 'BrowserPreviewStartError' as const,
-          cause: started.left,
+          cause: started.error,
           rollbackFailures: [...rollbackFailures],
         })
       }
-      runtime = started.right
+      runtime = started.value
 
       const { frame } = runtime
       if (frame !== undefined) {
@@ -179,14 +190,15 @@ export const makeBrowserPreview = (
           const completion = yield* Deferred.make<void>()
           yield* Ref.set(activeFrame, Option.some(completion))
           yield* Effect.ensuring(
-            frame(deltaSeconds).pipe(
-              Effect.catchAllCause((cause) => Effect.gen(function* () {
+            Effect.matchCauseEffect(frame(deltaSeconds), {
+              onFailure: (cause) => Effect.gen(function* () {
                 yield* Effect.logError(`Browser preview frame failed: ${Cause.pretty(cause)}`)
                 yield* Effect.sync(() => { Effect.runFork(mutex.withPermits(1)(stopUnlocked)) })
-              })),
-            ),
+              }),
+              onSuccess: () => Effect.void,
+            }),
             Ref.set(activeFrame, Option.none()).pipe(
-              Effect.zipRight(Deferred.succeed(completion, undefined)),
+              Effect.andThen(Deferred.succeed(completion, undefined)),
               Effect.asVoid,
             ),
           )
@@ -219,7 +231,7 @@ export const makeBrowserPreview = (
 
   const start = mutex.withPermits(1)(startUnlocked)
   const stop = mutex.withPermits(1)(stopUnlocked)
-  const restart = mutex.withPermits(1)(Effect.zipRight(stopUnlocked, startUnlocked))
+  const restart = mutex.withPermits(1)(Effect.andThen(stopUnlocked, startUnlocked))
 
   return {
     start,

@@ -1,4 +1,5 @@
 import { type BootBudgetVerdict, type PhaseTiming } from '../domain/boot-phase.js'
+import { Brand, Context, Effect, Option } from 'effect'
 import {
   type CameraPoseSnapshot,
   ClockPort,
@@ -6,7 +7,6 @@ import {
   type MonotonicTimeSecs,
   type StageRegistration,
 } from '@nerima-games/mc-kernel'
-import { Context, Effect, Option } from 'effect'
 import {
   type LaunchOptions,
   type ResolvedLaunchOptions,
@@ -39,14 +39,14 @@ export type PlaygroundHandle = {
 export type PlaygroundApi = {
   readonly launch: (
     options?: LaunchOptions | undefined,
-  ) => Effect.Effect<PlaygroundHandle, WorldProviderError, ClockPort | PlaygroundPorts>
+  ) => Effect.Effect<PlaygroundHandle, WorldProviderError | ReturnType<typeof Brand.error>, ClockPort | PlaygroundPorts>
   readonly current: Effect.Effect<Option.Option<PlaygroundHandle>>
   readonly stop: Effect.Effect<void>
 }
 
-// TypeScript's `isolatedDeclarations` cannot infer through `extends Context.Tag(...)<...>()`, an instantiation expression; hoisting it into an explicitly typed const (same pattern as mc-kernel's ClockPort in src/domain/clock.ts) gives the extends clause a plain identifier.
+// TypeScript's `isolatedDeclarations` cannot infer through `extends Effect.Tag(...)<...>()`, an instantiation expression; hoisting it into an explicitly typed const (same pattern as mc-kernel's ClockPort in src/domain/clock.ts) gives the extends clause a plain identifier.
 const PlaygroundBase: Context.TagClass<Playground, '@nerima-games/mc-playground-kit/Playground', PlaygroundApi> =
-  Context.Tag('@nerima-games/mc-playground-kit/Playground')<Playground, PlaygroundApi>()
+  Effect.Tag('@nerima-games/mc-playground-kit/Playground')<Playground, PlaygroundApi>()
 export class Playground extends PlaygroundBase {}
 
 export type Generation = {

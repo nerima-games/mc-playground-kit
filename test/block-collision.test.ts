@@ -17,6 +17,22 @@ import { blockReaderOfChunkWorld, emptyChunkWorld, writeBlockAtChunkWorld } from
 
 const at = (x: number) => blockPosition(x, 0, 0)
 
+const emptyWorld = () => {
+  const world = emptyChunkWorld(384, -64)
+  if ('_tag' in world) {
+    throw new Error(world.cause.message)
+  }
+  return world
+}
+
+const blockReader = (world: Parameters<typeof blockReaderOfChunkWorld>[0]) => {
+  const reader = blockReaderOfChunkWorld(world)
+  if ('_tag' in reader) {
+    throw new Error(reader.cause.message)
+  }
+  return reader
+}
+
 describe('block collision', () => {
   it('projects every kernel collision shape to a block hull', () => {
     const stone = blockIdOf('stone')
@@ -124,16 +140,19 @@ describe('block collision', () => {
 
   it('resolves a single collision through a finite chunk world point reader', () => {
     const written = writeBlockAtChunkWorld(
-      emptyChunkWorld(384, -64),
+      emptyWorld(),
       at(0),
       blockIdOf('stone'),
     )
 
+    if ('_tag' in written) {
+      throw new Error(written.cause.message)
+    }
     if (written.outcome !== 'updated') {
       throw new Error(`Expected chunk update, got ${written.outcome}`)
     }
 
-    expect(blockCollisionAt(blockReaderOfChunkWorld(written.world), at(0))?.shape).toBe('full')
-    expect(blockCollisionAt(blockReaderOfChunkWorld(written.world), at(1))).toBeNull()
+    expect(blockCollisionAt(blockReader(written.world), at(0))?.shape).toBe('full')
+    expect(blockCollisionAt(blockReader(written.world), at(1))).toBeNull()
   })
 })

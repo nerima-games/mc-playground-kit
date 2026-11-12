@@ -18,6 +18,14 @@ const effect = (
   amplifier?: number,
 ) => ({ type, remainingSecs, pulseClockSecs, ...(amplifier === undefined ? {} : { amplifier }) })
 
+const tickOf = (...args: Parameters<typeof tickStatusEffects>) => {
+  const result = tickStatusEffects(...args)
+  if ('_tag' in result) {
+    throw new Error(result.cause.message)
+  }
+  return result
+}
+
 describe('status effects', () => {
   it('validates the persisted shape and copies nested state', () => {
     const valid = {
@@ -103,7 +111,7 @@ describe('status effects', () => {
   })
 
   it('ticks pulses, timed attributes, and expiry', () => {
-    const tick = tickStatusEffects(
+    const tick = tickOf(
       {
         effects: [
           effect('poison', 3, 0),
@@ -133,7 +141,7 @@ describe('status effects', () => {
     expect(tick.state.effects[2]?.remainingSecs).toBeCloseTo(1.9)
     expect(tick.state.effects[3]?.remainingSecs).toBeCloseTo(0.9)
 
-    const expired = tickStatusEffects(
+    const expired = tickOf(
       {
         effects: [
           effect('poison', 1, 0),
@@ -152,7 +160,7 @@ describe('status effects', () => {
     expect(expired.nauseaAmplifier).toBeNull()
     expect(expired.state).toEqual({ effects: [] })
 
-    const sustainedHunger = tickStatusEffects(
+    const sustainedHunger = tickOf(
       { effects: [effect('hunger', 3)] },
       1,
     )
@@ -165,14 +173,14 @@ describe('status effects', () => {
       nauseaAmplifier: null,
     })
 
-    const amplified = tickStatusEffects(
+    const amplified = tickOf(
       { effects: [effect('poison', 1, 0, 2), effect('regeneration', 3, 2, 1)] },
       1,
     )
     expect(amplified.poisonPulses).toBe(4)
     expect(amplified.regenerationPulses).toBe(2)
 
-    expect(tickStatusEffects({ effects: [] }, -1)).toEqual({
+    expect(tickOf({ effects: [] }, -1)).toEqual({
       state: { effects: [] },
       poisonPulses: 0,
       regenerationPulses: 0,
@@ -180,11 +188,14 @@ describe('status effects', () => {
       hungerExhaustion: 0,
       nauseaAmplifier: null,
     })
-    expect(tickStatusEffects({ effects: [] }, Number.NaN).state).toEqual({ effects: [] })
+    expect(tickOf({ effects: [] }, Number.NaN).state).toEqual({ effects: [] })
     const invalidState = {
       effects: [{ type: 'invalid', remainingSecs: 1, pulseClockSecs: 0 }],
     }
-    expect(() => tickStatusEffects(invalidState, 0)).toThrow(TypeError)
+    expect(tickStatusEffects(invalidState, 0)).toMatchObject({
+      _tag: 'InvalidStatusEffectType',
+      cause: { message: 'status effect type is not recognised: invalid' },
+    })
     expect(POISON_DAMAGE_POINTS).toBe(1)
     expect(REGENERATION_HEAL_POINTS).toBe(1)
     expect(PLAYER_MAXIMUM_HEALTH_POINTS).toBe(20)

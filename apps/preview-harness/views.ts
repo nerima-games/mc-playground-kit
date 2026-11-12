@@ -12,6 +12,7 @@
  * "boot is fast" is unfalsifiable; a phase table against `BOOT_PHASE_BUDGET_MILLIS`
  * can be recomputed by hand and found wrong.
  */
+import assert from 'node:assert/strict'
 import {
   BOOT_BUDGET_MILLIS,
   BOOT_PHASE_BUDGET_MILLIS,
@@ -21,6 +22,18 @@ import {
   DurationMillis,
   type BootPhase,
 } from '../../src/domain/boot-phase'
+
+const durationMillisValue = (value: number) => {
+  const result = DurationMillis(value)
+  assert(result._tag === 'Valid')
+  return result.value
+}
+
+const verdictOf = (timings: Parameters<typeof classifyBootTimings>[0]) => {
+  const result = classifyBootTimings(timings)
+  assert(result._tag === 'Valid')
+  return result.value
+}
 import {
   DEFAULT_FLAT_WORLD,
   DEFAULT_SPAWN_KIT,
@@ -137,7 +150,7 @@ export const bootView = (view: HarnessView, style: Style, width: number): Readon
       )}`,
     ),
   )
-  lines.push(row(style, 'verdict', style.dim(describeBootVerdict(classifyBootTimings(record.timings)))))
+  lines.push(row(style, 'verdict', style.dim(describeBootVerdict(verdictOf(record.timings)))))
 
   if (record.overrunPhases.length > 0) {
     lines.push('')
@@ -412,10 +425,10 @@ export const optionsView = (style: Style, width: number): ReadonlyArray<string> 
       'classifier',
       style.dim(
         describeBootVerdict(
-          classifyBootTimings(
+          verdictOf(
             BOOT_PHASE_ORDER.map((phase) => ({
               phase,
-              durationMillis: DurationMillis(BOOT_PHASE_BUDGET_MILLIS[phase]),
+              durationMillis: durationMillisValue(BOOT_PHASE_BUDGET_MILLIS[phase]),
             })),
           ),
         ),

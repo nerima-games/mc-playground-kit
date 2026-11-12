@@ -36,9 +36,12 @@ import {
   WorldId,
   position,
   type CameraPoseSnapshot,
+  type ClockService,
   type StageRegistration,
 } from '@nerima-games/mc-kernel'
 import { InputPort, RendererPort, SimulationPort, WorldProviderPort } from '../src/application/preview-ports'
+import { runBootSequence } from '../src/application/playground-boot'
+import { type BootServices } from '../src/application/playground-contracts'
 import { FIRST_FRAME_DELTA_SECS, Playground, PlaygroundLayer, launchPlayground } from '../src/application/playground'
 
 // ---------------------------------------------------------------------------
@@ -78,7 +81,7 @@ const makeFakes = (costs: PortCosts = CHEAP, failInputDetach = false, failInputA
 
     const record = (what: string): Effect.Effect<void> => Ref.update(events, (log) => [...log, what])
     const spend = (secs: number): Effect.Effect<void> => Ref.update(nowSecs, (value) => value + secs)
-    const step = (what: string, secs: number): Effect.Effect<void> => record(what).pipe(Effect.zipRight(spend(secs)))
+  const step = (what: string, secs: number): Effect.Effect<void> => record(what).pipe(Effect.andThen(spend(secs)))
 
     const layer = Layer.mergeAll(
       Layer.succeed(ClockPort, {
@@ -101,7 +104,7 @@ const makeFakes = (costs: PortCosts = CHEAP, failInputDetach = false, failInputA
         detach: step('renderer.detach', 0),
       }),
       Layer.succeed(InputPort, {
-        attach: (failInputAttach ? step('input.attach', costs.input).pipe(Effect.zipRight(Effect.die('input.attach failure'))) : step('input.attach', costs.input)),
+        attach: (failInputAttach ? step('input.attach', costs.input).pipe(Effect.andThen(Effect.die('input.attach failure'))) : step('input.attach', costs.input)),
         detach: failInputDetach ? Effect.die('input.detach failure') : step('input.detach', 0),
       }),
     )
@@ -134,6 +137,46 @@ const recordingStage = (id: string, target: number) =>
 // ---------------------------------------------------------------------------
 
 describe('boot', () => {
+  it.effect('fails in the typed channel when valid phase durations overflow in aggregate', () =>
+    Effect.gen(function* () {
+      const clockReads = yield* Ref.make(0)
+      const clock: ClockService = {
+        monotonicSecs: Ref.getAndUpdate(clockReads, (read) => read + 1).pipe(
+          Effect.map((read) => MonotonicTimeSecs(read % 2 === 0 ? 0 : 1e305)),
+        ),
+        wallClockEpochMillis: Effect.succeed(EpochMillis(0)),
+      }
+      const services: BootServices = {
+        clock,
+        input: { attach: Effect.void, detach: Effect.void },
+        renderer: {
+          attach: Effect.void,
+          detach: Effect.void,
+          renderFrame: () => Effect.void,
+        },
+        simulation: {
+          spawn: () => Effect.void,
+          tick: () => Effect.void,
+          cameraPose: Effect.succeed(POSE),
+          stop: Effect.void,
+        },
+        world: { openFlatWorld: () => Effect.void, closeWorld: Effect.void },
+      }
+      const result = yield* Effect.match(runBootSequence(services, undefined), {
+        onFailure: (error) => ({ _tag: 'Failure' as const, error }),
+        onSuccess: (value) => ({ _tag: 'Success' as const, value }),
+      })
+
+      expect(result._tag).toBe('Failure')
+      if (result._tag === 'Failure') {
+        expect(Array.isArray(result.error)).toBe(true)
+        if (Array.isArray(result.error)) {
+          expect(result.error[0]?.message).toContain('finite')
+        }
+      }
+    }),
+  )
+
   it.effect('launchPlayground() with no arguments produces a live preview', () =>
     Effect.gen(function* () {
       const fakes = yield* makeFakes()

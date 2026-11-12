@@ -25,11 +25,11 @@ import {
   type FluidState,
   clearFluidCell,
   fluidCellAt,
-  fluidLevel,
   scheduleFluidAt,
   setFluidCell,
   unscheduleFluidAt,
 } from './fluid-state.js'
+import { Brand } from 'effect'
 
 const DOWNWARD_STEP = 1
 
@@ -55,10 +55,15 @@ type MutableFluidUpdate = {
   world: BlockWorld
 }
 
+// This constructor is private to values whose range follows from the source
+// Constant or the validated source cell and its lower-bound check. Public
+// Numeric inputs use `fluidLevel`, which validates before branding.
+const fluidLevelFromInvariant = Brand.nominal<FluidLevel>()
+
 const sourceFluidCell = (kind: FlowingFluidKind): FluidCell => ({
   falling: false,
   kind,
-  level: fluidLevel(SOURCE_FLUID_LEVEL),
+  level: fluidLevelFromInvariant(SOURCE_FLUID_LEVEL),
 })
 
 const fluidCellForBlock = (
@@ -71,7 +76,12 @@ const fluidCellForBlock = (
     return null
   }
 
-  return fluidCellAt(state, position) ?? sourceFluidCell(kind)
+  const existing = fluidCellAt(state, position)
+  if (existing !== null) {
+    return existing
+  }
+
+  return sourceFluidCell(kind)
 }
 
 export const fluidStateFromWorld = (world: BlockWorld): FluidState => {
@@ -86,10 +96,7 @@ export const fluidStateFromWorld = (world: BlockWorld): FluidState => {
     }
   }
 
-  return {
-    cells,
-    scheduled,
-  }
+  return { cells, scheduled }
 }
 
 export const canFluidReplace = (
@@ -104,7 +111,7 @@ const mixingBlockId = (
   sourceKind: FlowingFluidKind,
   target: FluidCell,
 ): BlockId => {
-  if (sourceKind === 'water' && target.kind === 'lava' && target.level === fluidLevel(SOURCE_FLUID_LEVEL)) {
+  if (sourceKind === 'water' && target.kind === 'lava' && target.level === SOURCE_FLUID_LEVEL) {
     return FLUID_MIX_BLOCK_IDS.obsidian
   }
 
@@ -250,11 +257,11 @@ const flowFrom = (
     return
   }
 
-  if (source.level <= fluidLevel(FLUID_LEVEL_MIN)) {
+  if (source.level <= FLUID_LEVEL_MIN) {
     return
   }
 
-  const horizontalLevel = fluidLevel(source.level - FLUID_LEVEL_STEP)
+  const horizontalLevel = fluidLevelFromInvariant(source.level - FLUID_LEVEL_STEP)
   for (const neighbour of horizontalBlockNeighbours(position)) {
     flowTo(context, {
       falling: false,

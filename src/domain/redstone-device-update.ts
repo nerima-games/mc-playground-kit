@@ -26,15 +26,18 @@ import {
   type RedstoneRepeaterTimer,
   type RedstoneState,
   redstoneInputAt,
-  redstonePower,
 } from './redstone-state.js'
 import {
   deviceOutputAtTarget,
   signalPowerAt,
 } from './redstone-network.js'
+import { Brand } from 'effect'
 import { blockAt } from './block-world.js'
 
 const REPEATER_TIMER_STEP = 1
+
+// All inputs are validated branded powers and each transition stays in 0..15.
+const redstonePowerFromInvariant = Brand.nominal<RedstonePower>()
 
 type RepeaterPlacement = RedstoneDevicePlacement & {
   readonly device: RedstoneRepeater
@@ -75,7 +78,7 @@ const setDevicePower = (
 const powerInMap = (
   powers: ReadonlyMap<BlockPositionKey, RedstonePower>,
   key: BlockPositionKey,
-): RedstonePower => powers.get(key) ?? redstonePower(REDSTONE_POWER_MIN)
+): RedstonePower => powers.get(key) ?? redstonePowerFromInvariant(REDSTONE_POWER_MIN)
 
 const activeDeviceKeys = (
   layout: RedstoneLayout,
@@ -169,7 +172,7 @@ const clearObserverPulse = (
   setDevicePower(
     transition.deviceOutputs,
     placement.key,
-    redstonePower(REDSTONE_POWER_MIN),
+    redstonePowerFromInvariant(REDSTONE_POWER_MIN),
   )
 }
 
@@ -264,7 +267,7 @@ const comparatorSidePower = (
   context: DevicePowerContext,
   comparator: ComparatorPlacement,
 ): RedstonePower => {
-  let side = redstonePower(REDSTONE_POWER_MIN)
+  let side = redstonePowerFromInvariant(REDSTONE_POWER_MIN)
   for (const face of horizontalSideFaces(comparator.device.facing)) {
     const candidate = signalPowerAt(
       context,
@@ -291,11 +294,11 @@ const comparatorPower = (
   const side = comparatorSidePower(context, comparator)
   if (comparator.device.mode === 'compare') {
     if (side > back) {
-      return redstonePower(REDSTONE_POWER_MIN)
+      return redstonePowerFromInvariant(REDSTONE_POWER_MIN)
     }
     return back
   }
-  return redstonePower(Math.max(REDSTONE_POWER_MIN, back - side))
+  return redstonePowerFromInvariant(Math.max(REDSTONE_POWER_MIN, back - side))
 }
 
 export const updateComparators = (
@@ -351,7 +354,7 @@ export const updateObservers = (
         setDevicePower(
           transition.deviceOutputs,
           placement.key,
-          redstonePower(REDSTONE_POWER_MAX),
+          redstonePowerFromInvariant(REDSTONE_POWER_MAX),
         )
       }
       transition.observerSnapshots.set(placement.key, token)

@@ -7,9 +7,12 @@ import {
   EpochMillis,
   MonotonicTimeSecs,
   StageId,
+  type StageRegistration,
 } from '@nerima-games/mc-kernel'
 import { describe, expect, it } from '@effect/vitest'
-import { Effect, Ref } from 'effect'
+import { Effect, Ref, Schema } from 'effect'
+import * as fc from 'fast-check'
+import assert from 'node:assert/strict'
 import { flattenStages } from '../src/domain/launch-options'
 import { firstOf } from './support/require-present'
 import {
@@ -25,6 +28,11 @@ import {
 } from '../src/domain/block-interaction'
 
 const at = (x: number, y = 0, z = 0) => blockPosition(x, y, z)
+
+const stageValue = (result: ReturnType<typeof makeWorldMechanicsStage>) => {
+  assert(result._tag === 'Valid')
+  return result.value
+}
 
 describe('world mechanics stage', () => {
   it('advances fluid and redstone updates through one immutable state boundary', () => {
@@ -88,10 +96,10 @@ describe('world mechanics stage', () => {
 
       const withAfter = yield* Ref.make(worldMechanicsStateFromWorld(empty))
       const after = StageId('input:sample')
-      const stage = makeWorldMechanicsStage(withAfter, {
+      const stage = stageValue(makeWorldMechanicsStage(withAfter, {
         after: [after],
         id: StageId('world:mechanics'),
-      })
+      }))
       expect(stage.after).toEqual([after])
       yield* stage.run(DeltaTimeSecs(0)).pipe(
         Effect.provideService(ClockPort, {
@@ -102,9 +110,9 @@ describe('world mechanics stage', () => {
       expect((yield* Ref.get(withAfter)).world).toBe(empty)
 
       const withoutAfter = yield* Ref.make(worldMechanicsStateFromWorld(empty))
-      const standalone = makeWorldMechanicsStage(withoutAfter, {
+      const standalone = stageValue(makeWorldMechanicsStage(withoutAfter, {
         id: StageId('world:mechanics:standalone'),
-      })
+      }))
       expect(standalone.after).toBeUndefined()
       yield* standalone.run(DeltaTimeSecs(0)).pipe(
         Effect.provideService(ClockPort, {
@@ -126,13 +134,13 @@ describe('world mechanics stage', () => {
       const current = worldMechanicsStateFromWorld(world)
       const state = yield* Ref.make(current)
       let observed: WorldMechanicsState | undefined = undefined
-      const stage = makeWorldMechanicsStage(state, {
+      const stage = stageValue(makeWorldMechanicsStage(state, {
         id: StageId('world:mechanics:fixed'),
         onStateChange: (next) => {
           observed = next
         },
         tickIntervalSecs: 1,
-      })
+      }))
       const clock = {
         monotonicSecs: Effect.succeed(MonotonicTimeSecs(0)),
         wallClockEpochMillis: Effect.succeed(EpochMillis(0)),
@@ -191,17 +199,57 @@ describe('world mechanics stage', () => {
   )
 
   it('rejects a non-positive or non-finite tick interval', () => {
-    expect(() =>
-      makeWorldMechanicsStage(Ref.unsafeMake(worldMechanicsStateFromWorld(emptyBlockWorld())), {
-        id: StageId('world:mechanics:invalid-zero'),
-        tickIntervalSecs: 0,
-      }),
-    ).toThrow(RangeError)
-    expect(() =>
-      makeWorldMechanicsStage(Ref.unsafeMake(worldMechanicsStateFromWorld(emptyBlockWorld())), {
-        id: StageId('world:mechanics:invalid-nan'),
-        tickIntervalSecs: Number.NaN,
-      }),
-    ).toThrow(RangeError)
+    const state = Ref.unsafeMake(worldMechanicsStateFromWorld(emptyBlockWorld()))
+    const zero = makeWorldMechanicsStage(state, {
+      id: StageId('world:mechanics:invalid-zero'),
+      tickIntervalSecs: 0,
+    })
+    const nan = makeWorldMechanicsStage(state, {
+      id: StageId('world:mechanics:invalid-nan'),
+      tickIntervalSecs: Number.NaN,
+    })
+
+    expect(zero._tag).toBe('Invalid')
+    expect(nan._tag).toBe('Invalid')
+    if (zero._tag === 'Invalid') {
+      expect(zero.error[0]?.message).toBe('tickIntervalSecs must be a finite positive number')
+    }
+    expect(makeWorldMechanicsStage(state, {
+      id: StageId('world:mechanics:invalid-negative'),
+      tickIntervalSecs: -Number.MIN_VALUE,
+    })._tag).toBe('Invalid')
+    expect(makeWorldMechanicsStage(state, {
+      id: StageId('world:mechanics:invalid-infinity'),
+      tickIntervalSecs: Number.POSITIVE_INFINITY,
+    })._tag).toBe('Invalid')
+    expect(makeWorldMechanicsStage(state, {
+      id: StageId('world:mechanics:min-positive'),
+      tickIntervalSecs: Number.MIN_VALUE,
+    })._tag).toBe('Valid')
+  })
+
+  it('property-checks tick interval validation and schema-decodes valid stages', () => {
+    const state = Ref.unsafeMake(worldMechanicsStateFromWorld(emptyBlockWorld()))
+    const runSchema = Schema.declare<StageRegistration['run']>(
+      (input): input is StageRegistration['run'] => typeof input === 'function',
+    )
+    const stageSchema = Schema.Struct({
+      after: Schema.optional(Schema.Array(Schema.String)),
+      id: Schema.String,
+      run: runSchema,
+    })
+
+    fc.assert(fc.property(fc.double(), (interval) => {
+      const result = makeWorldMechanicsStage(state, {
+        id: StageId('world:mechanics:property'),
+        tickIntervalSecs: interval,
+      })
+      const accepted = Number.isFinite(interval) && interval > 0
+
+      expect(result._tag).toBe(accepted ? 'Valid' : 'Invalid')
+      if (result._tag === 'Valid') {
+        expect(Schema.decodeUnknownOption(stageSchema)(result.value)._tag).toBe('Some')
+      }
+    }))
   })
 })

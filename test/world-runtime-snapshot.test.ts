@@ -20,6 +20,12 @@ import {
 import { blockAtChunkWorld } from '../src/domain/chunk-world'
 import { DEFAULT_FLAT_WORLD } from '../src/domain/launch-options'
 
+const resultOf = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  Effect.match(effect, {
+    onFailure: (error) => ({ _tag: 'Failure' as const, error }),
+    onSuccess: (value) => ({ _tag: 'Success' as const, value }),
+  })
+
 const openWorld = (surfaceY = DEFAULT_FLAT_WORLD.surfaceY) =>
   Effect.gen(function* () {
     const provider = yield* WorldProviderPort
@@ -75,16 +81,16 @@ describe('snapshotWorldRuntime', () => {
         ...store,
         snapshot: (_coord) => Effect.succeed(undefined),
       }
-      const result = yield* Effect.either(snapshotWorldRuntime(broken))
+      const result = yield* resultOf(snapshotWorldRuntime(broken))
 
-      expect(result._tag).toBe('Left')
-      if (result._tag !== 'Left') {
+      expect(result._tag).toBe('Failure')
+      if (result._tag !== 'Failure') {
         throw new Error('expected snapshot to fail')
       }
-      expect(result.left).toBeInstanceOf(WorldRuntimeSnapshotError)
-      expect(result.left.reason).toBe('chunk-unloaded-during-snapshot')
-      expect(result.left.cx).toBe(initial[0]?.cx)
-      expect(result.left.cz).toBe(initial[0]?.cz)
+      expect(result.error).toBeInstanceOf(WorldRuntimeSnapshotError)
+      expect(result.error.reason).toBe('chunk-unloaded-during-snapshot')
+      expect(result.error.cx).toBe(initial[0]?.cx)
+      expect(result.error.cz).toBe(initial[0]?.cz)
     }).pipe(
       Effect.provide(
         GeneratedWorldProviderLayer({ terrain: { decorate: false } }),
@@ -114,15 +120,15 @@ describe('snapshotWorldRuntime', () => {
               : { ...value, blocks: new Uint16Array(1) },
           ),
       }
-      const result = yield* Effect.either(snapshotWorldRuntime(broken))
+      const result = yield* resultOf(snapshotWorldRuntime(broken))
 
-      expect(result._tag).toBe('Left')
-      if (result._tag !== 'Left') {
+      expect(result._tag).toBe('Failure')
+      if (result._tag !== 'Failure') {
         throw new Error('expected snapshot to fail')
       }
-      expect(result.left.reason).toBe('invalid-chunk')
-      expect(result.left.cx).toBe(initial[0]?.cx)
-      expect(result.left.cz).toBe(initial[0]?.cz)
+      expect(result.error.reason).toBe('invalid-chunk')
+      expect(result.error.cx).toBe(initial[0]?.cx)
+      expect(result.error.cz).toBe(initial[0]?.cz)
     }).pipe(
       Effect.provide(
         GeneratedWorldProviderLayer({ terrain: { decorate: false } }),
@@ -150,13 +156,13 @@ describe('snapshotWorldRuntime', () => {
           return reads === 1 ? initial : [...initial, chunkCoord(1, 0)]
         }),
       }
-      const result = yield* Effect.either(snapshotWorldRuntime(broken))
+      const result = yield* resultOf(snapshotWorldRuntime(broken))
 
-      expect(result._tag).toBe('Left')
-      if (result._tag !== 'Left') {
+      expect(result._tag).toBe('Failure')
+      if (result._tag !== 'Failure') {
         throw new Error('expected snapshot to fail')
       }
-      expect(result.left.reason).toBe('loaded-set-changed')
+      expect(result.error.reason).toBe('loaded-set-changed')
     }).pipe(
       Effect.provide(
         GeneratedWorldProviderLayer({ terrain: { decorate: false } }),
@@ -184,13 +190,13 @@ describe('snapshotWorldRuntime', () => {
           return reads === 1 ? initial : [chunkCoord(1, 0)]
         }),
       }
-      const result = yield* Effect.either(snapshotWorldRuntime(broken))
+      const result = yield* resultOf(snapshotWorldRuntime(broken))
 
-      expect(result._tag).toBe('Left')
-      if (result._tag !== 'Left') {
+      expect(result._tag).toBe('Failure')
+      if (result._tag !== 'Failure') {
         throw new Error('expected snapshot to fail')
       }
-      expect(result.left.reason).toBe('loaded-set-changed')
+      expect(result.error.reason).toBe('loaded-set-changed')
     }).pipe(
       Effect.provide(
         GeneratedWorldProviderLayer({
@@ -246,9 +252,9 @@ describe('snapshotWorldRuntime', () => {
         snapshot: (_coord) => Effect.succeed(undefined),
       }
 
-      const result = yield* Effect.either(makeChunkStoreWorldSync(broken))
+      const result = yield* resultOf(makeChunkStoreWorldSync(broken))
 
-      expect(result._tag).toBe('Left')
+      expect(result._tag).toBe('Failure')
       expect(events).toEqual(['unsubscribe'])
     }).pipe(
       Effect.provide(

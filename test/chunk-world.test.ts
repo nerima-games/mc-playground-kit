@@ -12,6 +12,7 @@ import {
   type Chunk,
 } from '@nerima-games/mc-kernel'
 import { describe, expect, it } from 'vitest'
+import { Effect } from 'effect'
 import {
   blockAtChunkWorld,
   blockWorldOfChunkWorld,
@@ -19,11 +20,47 @@ import {
   emptyChunkWorld,
   encodeChunkAt,
   loadEncodedChunkIntoWorld,
+  type ChunkWorld,
   storeChunkInChunkWorld,
   writeBlockAtChunkWorld,
 } from '../src/domain/chunk-world'
 
 const HEIGHT = 4
+
+const worldOf = (height: number, minY = 0): ChunkWorld => {
+  const world = emptyChunkWorld(height, minY)
+  if ('_tag' in world) {
+    throw new Error(world.cause.message)
+  }
+  return world
+}
+
+const blockIdAt = (...args: Parameters<typeof blockAtChunkWorld>) => {
+  const blockId = blockAtChunkWorld(...args)
+  if (typeof blockId !== 'number') {
+    throw new Error(blockId.cause.message)
+  }
+  return blockId
+}
+
+const blockWorldOf = (...args: Parameters<typeof blockWorldOfChunkWorld>) => {
+  const blockWorld = blockWorldOfChunkWorld(...args)
+  if ('_tag' in blockWorld) {
+    throw new Error(blockWorld.cause.message)
+  }
+  return blockWorld
+}
+
+const writeBlock = (...args: Parameters<typeof writeBlockAtChunkWorld>) => {
+  const result = writeBlockAtChunkWorld(...args)
+  if ('_tag' in result) {
+    throw new Error(result.cause.message)
+  }
+  return result
+}
+
+const loadChunk = (...args: Parameters<typeof loadEncodedChunkIntoWorld>) =>
+  Effect.runSync(loadEncodedChunkIntoWorld(...args))
 
 const indexOf = (height: number, localX: number, localZ: number, y: number): number =>
   (localX * CHUNK_SIZE_XZ + localZ) * height + y
@@ -39,24 +76,33 @@ const emptyChunk = (coord = chunkCoord(-2, 3), height = HEIGHT): Chunk =>
 
 describe('chunk world', () => {
   it('validates the finite vertical boundary without allocating chunks', () => {
-    const world = emptyChunkWorld(HEIGHT)
+    const world = worldOf(HEIGHT)
 
     expect(world.height).toBe(HEIGHT)
     expect(world.minY).toBe(0)
     expect(world.chunks.size).toBe(0)
-    expect(() => emptyChunkWorld(0)).toThrow(RangeError)
-    expect(() => emptyChunkWorld(1.5)).toThrow(RangeError)
-    expect(() => emptyChunkWorld(0x10000)).toThrow(RangeError)
-    expect(() => emptyChunkWorld(HEIGHT, Number.NaN)).toThrow(RangeError)
-    expect(() => emptyChunkWorld(HEIGHT, Number.MAX_SAFE_INTEGER)).toThrow(RangeError)
+    expect(emptyChunkWorld(0)).toMatchObject({
+      _tag: 'ChunkWorldDataFailure',
+      cause: { name: 'RangeError', message: expect.stringContaining('height') },
+    })
+    expect(emptyChunkWorld(1.5)).toMatchObject({ _tag: 'ChunkWorldDataFailure' })
+    expect(emptyChunkWorld(0x10000)).toMatchObject({ _tag: 'ChunkWorldDataFailure' })
+    expect(emptyChunkWorld(HEIGHT, Number.NaN)).toMatchObject({
+      _tag: 'ChunkWorldDataFailure',
+      cause: { name: 'RangeError', message: expect.stringContaining('minimum y') },
+    })
+    expect(emptyChunkWorld(HEIGHT, Number.MAX_SAFE_INTEGER)).toMatchObject({
+      _tag: 'ChunkWorldDataFailure',
+      cause: { name: 'RangeError', message: expect.stringContaining('upper y') },
+    })
   })
 
   it('reads sparse negative coordinates and preserves prior worlds across writes', () => {
-    const world = emptyChunkWorld(HEIGHT)
+    const world = worldOf(HEIGHT)
     const position = blockPosition(-1, 2, -17)
-    const result = writeBlockAtChunkWorld(world, position, blockIdOf('dirt'))
+    const result = writeBlock(world, position, blockIdOf('dirt'))
 
-    expect(blockAtChunkWorld(world, position)).toBe(AIR_BLOCK_ID)
+    expect(blockIdAt(world, position)).toBe(AIR_BLOCK_ID)
     expect(result.outcome).toBe('updated')
     if (result.outcome !== 'updated') {
       throw new Error('Expected a block update')
@@ -66,17 +112,17 @@ describe('chunk world', () => {
     expect(result.world.chunks).not.toBe(world.chunks)
     expect(chunkKeyOf(chunkCoord(-1, -2))).toBe('-1,-2')
     expect(chunkAt(result.world, chunkCoord(-1, -2))?.coord).toEqual(chunkCoord(-1, -2))
-    expect(blockAtChunkWorld(result.world, position)).toBe(blockIdOf('dirt'))
-    expect(blockAtChunkWorld(result.world, blockPosition(-1, -1, -17))).toBe(AIR_BLOCK_ID)
-    expect(blockAtChunkWorld(result.world, blockPosition(-1, HEIGHT, -17))).toBe(AIR_BLOCK_ID)
+    expect(blockIdAt(result.world, position)).toBe(blockIdOf('dirt'))
+    expect(blockIdAt(result.world, blockPosition(-1, -1, -17))).toBe(AIR_BLOCK_ID)
+    expect(blockIdAt(result.world, blockPosition(-1, HEIGHT, -17))).toBe(AIR_BLOCK_ID)
   })
 
   it('supports a configured negative world minimum and keeps it across immutable writes', () => {
     const minY = -64
-    const world = emptyChunkWorld(384, minY)
+    const world = worldOf(384, minY)
     const bottom = blockPosition(3, minY, 5)
     const top = blockPosition(3, minY + world.height - 1, 5)
-    const result = writeBlockAtChunkWorld(world, bottom, blockIdOf('deepslate'))
+    const result = writeBlock(world, bottom, blockIdOf('deepslate'))
 
     expect(world.minY).toBe(minY)
     expect(result.outcome).toBe('updated')
@@ -84,28 +130,28 @@ describe('chunk world', () => {
       throw new Error('Expected a block update')
     }
     expect(result.world.minY).toBe(minY)
-    expect(blockAtChunkWorld(result.world, bottom)).toBe(blockIdOf('deepslate'))
-    expect(blockAtChunkWorld(result.world, top)).toBe(AIR_BLOCK_ID)
-    expect(blockAtChunkWorld(result.world, blockPosition(3, minY - 1, 5))).toBe(AIR_BLOCK_ID)
-    expect(blockAtChunkWorld(result.world, blockPosition(3, minY + world.height, 5))).toBe(AIR_BLOCK_ID)
+    expect(blockIdAt(result.world, bottom)).toBe(blockIdOf('deepslate'))
+    expect(blockIdAt(result.world, top)).toBe(AIR_BLOCK_ID)
+    expect(blockIdAt(result.world, blockPosition(3, minY - 1, 5))).toBe(AIR_BLOCK_ID)
+    expect(blockIdAt(result.world, blockPosition(3, minY + world.height, 5))).toBe(AIR_BLOCK_ID)
 
-    const topResult = writeBlockAtChunkWorld(result.world, top, blockIdOf('stone'))
+    const topResult = writeBlock(result.world, top, blockIdOf('stone'))
     expect(topResult.outcome).toBe('updated')
-    expect(blockAtChunkWorld(
+    expect(blockIdAt(
       topResult.outcome === 'updated' ? topResult.world : result.world,
       top,
     )).toBe(blockIdOf('stone'))
   })
 
   it('reports validation and idempotence outcomes without mutating the world', () => {
-    const world = emptyChunkWorld(HEIGHT)
+    const world = worldOf(HEIGHT)
     const position = blockPosition(4, 1, 5)
     const unknownBlockId = BlockId(255)
-    const unchanged = writeBlockAtChunkWorld(world, position, AIR_BLOCK_ID)
-    const unknown = writeBlockAtChunkWorld(world, position, unknownBlockId)
-    const below = writeBlockAtChunkWorld(world, blockPosition(4, -1, 5), blockIdOf('dirt'))
-    const above = writeBlockAtChunkWorld(world, blockPosition(4, HEIGHT, 5), blockIdOf('dirt'))
-    const placed = writeBlockAtChunkWorld(world, position, blockIdOf('dirt'))
+    const unchanged = writeBlock(world, position, AIR_BLOCK_ID)
+    const unknown = writeBlock(world, position, unknownBlockId)
+    const below = writeBlock(world, blockPosition(4, -1, 5), blockIdOf('dirt'))
+    const above = writeBlock(world, blockPosition(4, HEIGHT, 5), blockIdOf('dirt'))
+    const placed = writeBlock(world, position, blockIdOf('dirt'))
 
     expect(unchanged).toEqual({ outcome: 'unchanged', previousBlockId: AIR_BLOCK_ID, world })
     expect(unknown).toEqual({ blockId: unknownBlockId, outcome: 'unknown-block', world })
@@ -113,9 +159,9 @@ describe('chunk world', () => {
     expect(above).toEqual({ outcome: 'out-of-bounds', world })
     expect(placed.outcome).toBe('updated')
 
-    const same = writeBlockAtChunkWorld(placed.world, position, blockIdOf('dirt'))
-    const replaced = writeBlockAtChunkWorld(placed.world, position, blockIdOf('stone'))
-    const cleared = writeBlockAtChunkWorld(replaced.world, position, AIR_BLOCK_ID)
+    const same = writeBlock(placed.world, position, blockIdOf('dirt'))
+    const replaced = writeBlock(placed.world, position, blockIdOf('stone'))
+    const cleared = writeBlock(replaced.world, position, AIR_BLOCK_ID)
 
     expect(same).toEqual({
       outcome: 'unchanged',
@@ -126,11 +172,11 @@ describe('chunk world', () => {
     expect(cleared).toMatchObject({ outcome: 'updated', previousBlockId: blockIdOf('stone') })
     expect(cleared.world.chunks.size).toBe(0)
     expect(placed.world.chunks.size).toBe(1)
-    expect(blockAtChunkWorld(placed.world, position)).toBe(blockIdOf('dirt'))
+    expect(blockIdAt(placed.world, position)).toBe(blockIdOf('dirt'))
   })
 
   it('stores validated chunks, copies their bytes, and removes empty chunks sparsely', () => {
-    const world = emptyChunkWorld(HEIGHT)
+    const world = worldOf(HEIGHT)
     const value = sampleChunk()
     const stored = storeChunkInChunkWorld(world, value)
 
@@ -138,10 +184,10 @@ describe('chunk world', () => {
     expect(stored.world).not.toBe(world)
     expect(stored.world.chunks.size).toBe(1)
     expect(chunkAt(stored.world, value.coord)?.blocks).not.toBe(value.blocks)
-    expect(blockAtChunkWorld(stored.world, blockPosition(-31, 2, 50))).toBe(blockIdOf('dirt'))
+    expect(blockIdAt(stored.world, blockPosition(-31, 2, 50))).toBe(blockIdOf('dirt'))
 
     value.blocks.set(0, blockIdOf('stone'))
-    expect(blockAtChunkWorld(stored.world, blockPosition(-32, 0, 48))).toBe(AIR_BLOCK_ID)
+    expect(blockIdAt(stored.world, blockPosition(-32, 0, 48))).toBe(AIR_BLOCK_ID)
 
     const encoded = encodeChunkAt(stored.world, value.coord)
     expect(encoded).toEqual(encodeChunk(sampleChunk()))
@@ -158,14 +204,14 @@ describe('chunk world', () => {
     expect(storedAgain.outcome).toBe('stored')
     expect(storedAgain.world.chunks.size).toBe(1)
 
-    const materialized = blockWorldOfChunkWorld(stored.world)
+    const materialized = blockWorldOf(stored.world)
     expect(materialized).toEqual(new Map([
       [blockPositionKeyOf(blockPosition(-31, 2, 50)), blockIdOf('dirt')],
     ]))
   })
 
   it('rejects chunks with a different world height', () => {
-    const world = emptyChunkWorld(HEIGHT)
+    const world = worldOf(HEIGHT)
     const mismatch = storeChunkInChunkWorld(world, emptyChunk(chunkCoord(0, 0), HEIGHT + 1))
 
     expect(mismatch).toEqual({
@@ -177,17 +223,17 @@ describe('chunk world', () => {
   })
 
   it('loads versioned kernel chunks and reports malformed bytes at the boundary', () => {
-    const world = emptyChunkWorld(HEIGHT)
+    const world = worldOf(HEIGHT)
     const value = sampleChunk()
-    const loaded = loadEncodedChunkIntoWorld(world, encodeChunk(value))
-    const mismatch = loadEncodedChunkIntoWorld(
+    const loaded = loadChunk(world, encodeChunk(value))
+    const mismatch = loadChunk(
       world,
       encodeChunk(emptyChunk(chunkCoord(0, 0), HEIGHT + 1)),
     )
-    const invalid = loadEncodedChunkIntoWorld(world, new Uint8Array([0]))
+    const invalid = loadChunk(world, new Uint8Array([0]))
 
     expect(loaded.outcome).toBe('stored')
-    expect(blockAtChunkWorld(loaded.world, blockPosition(-31, 2, 50))).toBe(blockIdOf('dirt'))
+    expect(blockIdAt(loaded.world, blockPosition(-31, 2, 50))).toBe(blockIdOf('dirt'))
     expect(mismatch).toEqual({
       expectedHeight: HEIGHT,
       outcome: 'height-mismatch',
@@ -219,7 +265,7 @@ describe('chunk world', () => {
   // element assignment would have wrapped 300 down to 44 before an id could
   // ever reach kernel's boundary.
   it('stores a full-width Uint16Array per chunk, not the retired one-byte-per-block Uint8Array', () => {
-    const world = emptyChunkWorld(HEIGHT)
+    const world = worldOf(HEIGHT)
     const value = sampleChunk()
     const stored = storeChunkInChunkWorld(world, value)
 
@@ -230,9 +276,9 @@ describe('chunk world', () => {
   })
 
   it('keeps the same full-width storage on the write path', () => {
-    const world = emptyChunkWorld(HEIGHT)
+    const world = worldOf(HEIGHT)
     const position = blockPosition(1, 2, 3)
-    const written = writeBlockAtChunkWorld(world, position, blockIdOf('dirt'))
+    const written = writeBlock(world, position, blockIdOf('dirt'))
 
     expect(written.outcome).toBe('updated')
     const snapshot = chunkAt(written.world, chunkCoord(0, 0))
@@ -242,7 +288,7 @@ describe('chunk world', () => {
 
   it('rejects a chunk whose storage is shorter than its declared height', () => {
     const coord = chunkCoord(0, 0)
-    const world = emptyChunkWorld(HEIGHT)
+    const world = worldOf(HEIGHT)
     const malformed = {
       ...world,
       chunks: new Map([
@@ -250,7 +296,13 @@ describe('chunk world', () => {
       ]),
     }
 
-    expect(() => blockAtChunkWorld(malformed, blockPosition(0, 0, 0))).toThrow(RangeError)
-    expect(() => blockWorldOfChunkWorld(malformed)).toThrow(RangeError)
+    expect(blockAtChunkWorld(malformed, blockPosition(0, 0, 0))).toMatchObject({
+      _tag: 'ChunkWorldDataFailure',
+      cause: { name: 'RangeError', message: expect.stringContaining('index 0') },
+    })
+    expect(blockWorldOfChunkWorld(malformed)).toMatchObject({
+      _tag: 'ChunkWorldDataFailure',
+      cause: { name: 'RangeError', message: expect.stringContaining('received 0') },
+    })
   })
 })

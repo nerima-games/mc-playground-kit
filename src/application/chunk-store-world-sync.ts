@@ -11,7 +11,7 @@ import {
 } from '../domain/chunk-world.js'
 import { Effect, Ref } from 'effect'
 import {
-  type WorldRuntimeSnapshotError,
+  WorldRuntimeSnapshotError,
   snapshotChunk,
   snapshotWorldRuntime,
 } from './world-runtime-snapshot.js'
@@ -32,6 +32,26 @@ type RefreshWorldContext = {
   readonly chunkWorld: Ref.Ref<ChunkWorld>
   readonly store: ChunkStoreApi
   readonly subscription: ChunkDirtySubscription
+}
+
+const blockWorldFromChunkWorld = (
+  world: ChunkWorld,
+): Effect.Effect<BlockWorld, WorldRuntimeSnapshotError> => {
+  const blockWorld = blockWorldOfChunkWorld(world)
+  if ('_tag' in blockWorld) {
+    const detail = blockWorld.cause.cause
+    const coordinates: { cx?: number; cz?: number } = {}
+    if (
+      typeof detail === 'object' && detail !== null &&
+      'cx' in detail && typeof detail.cx === 'number' &&
+      'cz' in detail && typeof detail.cz === 'number'
+    ) {
+      coordinates.cx = detail.cx
+      coordinates.cz = detail.cz
+    }
+    return Effect.fail(new WorldRuntimeSnapshotError({ reason: 'invalid-chunk', ...coordinates }))
+  }
+  return Effect.succeed(blockWorld)
 }
 
 const applyDirtyBatch = (
@@ -64,8 +84,9 @@ const refreshWorld = (
     }
 
     const nextWorld = yield* applyDirtyBatch(context, batch)
+    const nextBlockWorld = yield* blockWorldFromChunkWorld(nextWorld)
     yield* Ref.set(context.chunkWorld, nextWorld)
-    yield* Ref.set(context.blockWorld, blockWorldOfChunkWorld(nextWorld))
+    yield* Ref.set(context.blockWorld, nextBlockWorld)
     return true
   })
 
@@ -75,8 +96,9 @@ export const makeChunkStoreWorldSync = (
   Effect.flatMap(store.subscribeDirty, (subscription) =>
     Effect.gen(function* makeChunkStoreWorldSyncGen() {
       const initialWorld = yield* snapshotWorldRuntime(store)
+      const initialBlockWorld = yield* blockWorldFromChunkWorld(initialWorld)
       const chunkWorld = yield* Ref.make(initialWorld)
-      const blockWorld = yield* Ref.make(blockWorldOfChunkWorld(initialWorld))
+      const blockWorld = yield* Ref.make(initialBlockWorld)
       const refreshMutex = yield* Effect.makeSemaphore(REFRESH_PERMITS)
       const refresh = refreshMutex.withPermits(REFRESH_PERMITS)(
         refreshWorld({
@@ -93,8 +115,10 @@ export const makeChunkStoreWorldSync = (
         refresh,
       }
     }).pipe(
-      Effect.catchAllCause((cause) =>
-        subscription.unsubscribe.pipe(Effect.zipRight(Effect.failCause(cause))),
-      ),
+      Effect.matchCauseEffect({
+        onFailure: (cause) =>
+          subscription.unsubscribe.pipe(Effect.andThen(Effect.failCause(cause))),
+        onSuccess: Effect.succeed,
+      }),
     ),
   )

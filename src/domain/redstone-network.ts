@@ -34,12 +34,16 @@ import {
   type RedstonePower,
   type RedstoneState,
   redstoneInputAt,
-  redstonePower,
   redstonePowerAt,
 } from './redstone-state.js'
+import { Brand } from 'effect'
 import {
   type RedstoneDevice,
 } from './redstone-devices.js'
+
+// Inputs are branded by `redstonePower`; these transitions preserve the
+// 0..15 range, so raw values use only the checked public constructor.
+const redstonePowerFromInvariant = Brand.nominal<RedstonePower>()
 
 const isWire = (world: BlockWorld, position: BlockPosition): boolean =>
   blockAt(world, position) === REDSTONE_BLOCK_IDS.wire
@@ -116,16 +120,16 @@ export const collectRedstoneLayout = (
 
 const sourcePowerFromTorch = (input: boolean | undefined): RedstonePower => {
   if (input === false) {
-    return redstonePower(REDSTONE_POWER_MIN)
+    return redstonePowerFromInvariant(REDSTONE_POWER_MIN)
   }
-  return redstonePower(REDSTONE_POWER_MAX)
+  return redstonePowerFromInvariant(REDSTONE_POWER_MAX)
 }
 
 const sourcePowerFromSwitch = (input: boolean | undefined): RedstonePower => {
   if (input !== true) {
-    return redstonePower(REDSTONE_POWER_MIN)
+    return redstonePowerFromInvariant(REDSTONE_POWER_MIN)
   }
-  return redstonePower(REDSTONE_POWER_MAX)
+  return redstonePowerFromInvariant(REDSTONE_POWER_MAX)
 }
 
 export const sourcePowerAt = (
@@ -137,7 +141,7 @@ export const sourcePowerAt = (
   const input = redstoneInputAt(state, position)
 
   if (blockId === REDSTONE_BLOCK_IDS.block) {
-    return redstonePower(REDSTONE_POWER_MAX)
+    return redstonePowerFromInvariant(REDSTONE_POWER_MAX)
   }
   if (blockId === REDSTONE_BLOCK_IDS.torch) {
     return sourcePowerFromTorch(input)
@@ -149,7 +153,7 @@ export const sourcePowerAt = (
   ) {
     return sourcePowerFromSwitch(input)
   }
-  return redstonePower(REDSTONE_POWER_MIN)
+  return redstonePowerFromInvariant(REDSTONE_POWER_MIN)
 }
 
 export const deviceOutputFace = (device: RedstoneDevice): BlockFace => {
@@ -164,7 +168,7 @@ export const deviceOutputAtTarget = (
   target: BlockPosition,
 ): RedstonePower => {
   const targetKey = blockPositionKeyOf(target)
-  let strongest = redstonePower(REDSTONE_POWER_MIN)
+  let strongest = redstonePowerFromInvariant(REDSTONE_POWER_MIN)
 
   for (const placement of context.devices) {
     const outputTarget = adjacentBlockPosition(
@@ -173,7 +177,7 @@ export const deviceOutputAtTarget = (
     )
     if (blockPositionKeyOf(outputTarget) === targetKey) {
       const output =
-        context.deviceOutputs.get(placement.key) ?? redstonePower(REDSTONE_POWER_MIN)
+        context.deviceOutputs.get(placement.key) ?? redstonePowerFromInvariant(REDSTONE_POWER_MIN)
       if (output > strongest) {
         strongest = output
       }
@@ -189,7 +193,7 @@ const enqueueWire = (
   power: RedstonePower,
 ): void => {
   const key = blockPositionKeyOf(position)
-  const previous = queue.powers.get(key) ?? redstonePower(REDSTONE_POWER_MIN)
+  const previous = queue.powers.get(key) ?? redstonePowerFromInvariant(REDSTONE_POWER_MIN)
   if (previous < power) {
     queue.powers.set(key, power)
     queue.pending.push({ position, power })
@@ -215,7 +219,7 @@ const seedDeviceWire = (
   placement: RedstoneDevicePlacement,
 ): void => {
   const output =
-    context.deviceOutputs.get(placement.key) ?? redstonePower(REDSTONE_POWER_MIN)
+    context.deviceOutputs.get(placement.key) ?? redstonePowerFromInvariant(REDSTONE_POWER_MIN)
   if (output > REDSTONE_POWER_MIN) {
     const outputTarget = adjacentBlockPosition(
       placement.position,
@@ -242,7 +246,7 @@ const propagateFromWire = (
 ): void => {
   const nextPower = current.power - REDSTONE_POWER_STEP
   if (nextPower > REDSTONE_POWER_MIN) {
-    const power = redstonePower(nextPower)
+    const power = redstonePowerFromInvariant(nextPower)
     for (const neighbour of horizontalBlockNeighbours(current.position)) {
       if (isWire(context.world, neighbour)) {
         enqueueWire(context.queue, neighbour, power)
@@ -281,9 +285,9 @@ export const signalPowerAt = (
 ): RedstonePower => {
   const source = sourcePowerAt(context.world, context.state, position)
   const wire =
-    context.powers.get(blockPositionKeyOf(position)) ?? redstonePower(REDSTONE_POWER_MIN)
+    context.powers.get(blockPositionKeyOf(position)) ?? redstonePowerFromInvariant(REDSTONE_POWER_MIN)
   const device = deviceOutputAtTarget(context, position)
-  return redstonePower(Math.max(source, wire, device))
+  return redstonePowerFromInvariant(Math.max(source, wire, device))
 }
 
 export const wirePowerChanges = (
@@ -295,7 +299,7 @@ export const wirePowerChanges = (
 
   for (const position of wires) {
     const before = redstonePowerAt(state, position)
-    const after = powers.get(blockPositionKeyOf(position)) ?? redstonePower(REDSTONE_POWER_MIN)
+    const after = powers.get(blockPositionKeyOf(position)) ?? redstonePowerFromInvariant(REDSTONE_POWER_MIN)
     if (before !== after) {
       changes.push({ after, before, kind: 'wire-power', position })
     }

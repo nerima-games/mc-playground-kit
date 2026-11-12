@@ -7,7 +7,8 @@
  * to be a real invariant belongs in `test/`, where it can fail CI; each note
  * says which test holds the claim and what the number used to be.
  */
-import { Effect, Layer, Option, Ref } from 'effect'
+import { Brand, Effect, Layer, Option, Ref } from 'effect'
+import assert from 'node:assert/strict'
 import { Playground, PlaygroundLayer, type PlaygroundHandle } from '../../src/application/playground'
 import {
   InputPort,
@@ -25,6 +26,18 @@ import {
   DurationMillis,
   elapsedMillis,
 } from '../../src/domain/boot-phase'
+
+const durationMillisValue = (value: number) => {
+  const result = DurationMillis(value)
+  assert(result._tag === 'Valid')
+  return result.value
+}
+
+const verdictOf = (timings: Parameters<typeof classifyBootTimings>[0]) => {
+  const result = classifyBootTimings(timings)
+  assert(result._tag === 'Valid')
+  return result.value
+}
 import {
   DEFAULT_FLAT_WORLD,
   DEFAULT_SPAWN_KIT,
@@ -259,19 +272,19 @@ const doubleRegistrationProbe = Effect.gen(function* () {
 const budgetProbe = (): ReadonlyArray<string> => {
   const sum = BOOT_PHASE_ORDER.reduce((total, phase) => total + BOOT_PHASE_BUDGET_MILLIS[phase], 0)
 
-  const onBudget = classifyBootTimings(
+  const onBudget = verdictOf(
     BOOT_PHASE_ORDER.map((phase) => ({
       phase,
-      durationMillis: DurationMillis(BOOT_PHASE_BUDGET_MILLIS[phase]),
+      durationMillis: durationMillisValue(BOOT_PHASE_BUDGET_MILLIS[phase]),
     })),
   )
-  const slowWorld = classifyBootTimings(
+  const slowWorld = verdictOf(
     BOOT_PHASE_ORDER.map((phase) => ({
       phase,
-      durationMillis: DurationMillis(phase === 'world' ? 900 : 0),
+      durationMillis: durationMillisValue(phase === 'world' ? 900 : 0),
     })),
   )
-  const partial = classifyBootTimings([{ phase: 'world', durationMillis: DurationMillis(900) }])
+  const partial = verdictOf([{ phase: 'world', durationMillis: durationMillisValue(900) }])
 
   const nonFinite = [
     ['0 -> Infinity', 0, Number.POSITIVE_INFINITY],
@@ -285,7 +298,7 @@ const budgetProbe = (): ReadonlyArray<string> => {
     try {
       return `   ${cell(label, 34)}${String(elapsedMillis(from, to))}`
     } catch {
-      return `   ${cell(label, 34)}THREW (DurationMillis rejected it)`
+      return `   ${cell(label, 34)}THREW (elapsedMillis failed)`
     }
   })
 
@@ -314,11 +327,9 @@ const budgetProbe = (): ReadonlyArray<string> => {
     ...nonFiniteRows,
     '',
     '   elapsedMillis is TOTAL: every pair of `number`s maps to a DurationMillis, and no row above',
-    '   can throw. It used to clamp only the negative case, which left `DurationMillis` — a',
-    '   Brand.refined constructor requiring `Number.isFinite(value) && value >= 0` — to reject a',
-    '   non-finite reading by THROWING, inside `phase()`, inside a `launch` whose signature is',
-    '   `Effect<PlaygroundHandle, never, ...>`. The error channel says a launch cannot fail; a',
-    '   defect is not in the error channel, and the launch died.',
+    '   can throw. The public DurationMillis constructor returns a typed Invalid result for a',
+    '   negative or non-finite input; elapsedMillis keeps its documented zero clamp for broken',
+    '   clock readings so a phase can still be recorded without inventing elapsed work.',
     '',
     '   How reachable that was depends on the clock. `MonotonicTimeSecs` is itself refined, so a',
     '   well-formed ClockPort cannot produce Infinity — but `elapsedMillis` does not take',
@@ -398,7 +409,11 @@ const FOOTER: ReadonlyArray<string> = [
   '   fixtures in apps/preview-harness/harness.ts are the shape they have to satisfy.',
 ]
 
-export const statsReport: Effect.Effect<ReadonlyArray<string>, WorldProviderError, never> = Effect.gen(function* () {
+export const statsReport: Effect.Effect<
+  ReadonlyArray<string>,
+  WorldProviderError | ReturnType<typeof Brand.error>,
+  never
+> = Effect.gen(function* () {
   return [
     ...HEADER,
     ...(yield* staleStopProbe),

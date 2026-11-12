@@ -242,6 +242,11 @@ type AdvancedStatusEffects = {
   readonly regenerationPulses: number
 }
 
+type InvalidStatusEffectType = {
+  readonly _tag: 'InvalidStatusEffectType'
+  readonly cause: TypeError
+}
+
 const activeEffectAfter = (
   effect: ActiveStatusEffect,
   elapsedSecs: number,
@@ -333,17 +338,18 @@ const sumNumbers = (values: ReadonlyArray<number>): number =>
 
 /**
  * Narrows one unvalidated effect to the closed union, naming the value it does
- * not recognise. The throw replaces what used to happen further down: an
- * unrecognised `type` skipped every switch arm and came back as a string where
- * an effect was expected, so the failure surfaced later as an unrelated
- * property access on `undefined`.
+ * not recognise. An unrecognised `type` skips every switch arm, so return a
+ * typed failure before it can be mistaken for an effect result.
  */
 const advanceUnvalidatedStatusEffect = (
   effect: StatusEffectStateInput['effects'][number],
   elapsedSecs: number,
-): AdvancedStatusEffect => {
+): AdvancedStatusEffect | InvalidStatusEffectType => {
   if (!isStatusEffectType(effect.type)) {
-    throw new TypeError(`status effect type is not recognised: ${effect.type}`)
+    return {
+      _tag: 'InvalidStatusEffectType',
+      cause: new TypeError(`status effect type is not recognised: ${effect.type}`),
+    }
   }
   return advanceStatusEffect({ ...effect, type: effect.type }, elapsedSecs)
 }
@@ -351,8 +357,15 @@ const advanceUnvalidatedStatusEffect = (
 const advanceStatusEffects = (
   effects: StatusEffectStateInput['effects'],
   elapsedSecs: number,
-): AdvancedStatusEffects => {
-  const advanced = effects.map((effect) => advanceUnvalidatedStatusEffect(effect, elapsedSecs))
+): AdvancedStatusEffects | InvalidStatusEffectType => {
+  const advanced: Array<AdvancedStatusEffect> = []
+  for (const effect of effects) {
+    const next = advanceUnvalidatedStatusEffect(effect, elapsedSecs)
+    if ('_tag' in next) {
+      return next
+    }
+    advanced.push(next)
+  }
   const activeEffects = advanced.flatMap((entry) => {
     if (entry.effect === null) {
       return []
@@ -374,9 +387,12 @@ const advanceStatusEffects = (
 export const tickStatusEffects = (
   state: StatusEffectStateInput,
   dt: number,
-): StatusEffectTick => {
+): StatusEffectTick | InvalidStatusEffectType => {
   const elapsedSecs = finiteDuration(dt)
   const advanced = advanceStatusEffects(state.effects, elapsedSecs)
+  if ('_tag' in advanced) {
+    return advanced
+  }
 
   return {
     hungerExhaustion: advanced.hungerExhaustion,

@@ -6,6 +6,9 @@ import {
   blockPosition,
   blockPositionKeyOf,
 } from '@nerima-games/mc-kernel'
+import { Schema } from 'effect'
+import * as fc from 'fast-check'
+import assert from 'node:assert/strict'
 import { describe, expect, it } from 'vitest'
 import {
   FLUID_BLOCK_IDS,
@@ -32,6 +35,12 @@ import {
   updateFluids,
 } from '../src/domain/block-interaction'
 
+const fluidLevelValue = (value: number) => {
+  const result = fluidLevel(value)
+  assert(result._tag === 'Valid')
+  return result.value
+}
+
 const at = (x: number, y = 0, z = 0) => blockPosition(x, y, z)
 
 const place = (
@@ -56,7 +65,7 @@ const blockedAround = (
 const sourceCell = (kind: 'lava' | 'water') => ({
   falling: false,
   kind,
-  level: fluidLevel(SOURCE_FLUID_LEVEL),
+  level: fluidLevelValue(SOURCE_FLUID_LEVEL),
 })
 
 describe('fluid data and state', () => {
@@ -74,11 +83,14 @@ describe('fluid data and state', () => {
     expect(fluidKindOfBlockId(lava)).toBe('lava')
     expect(fluidKindOfBlockId(stone)).toBeNull()
 
-    expect(fluidLevel(FLUID_LEVEL_MIN)).toBe(FLUID_LEVEL_MIN)
-    expect(fluidLevel(FLUID_LEVEL_MAX)).toBe(FLUID_LEVEL_MAX)
-    expect(() => fluidLevel(FLUID_LEVEL_MIN - FLUID_LEVEL_STEP)).toThrow()
-    expect(() => fluidLevel(FLUID_LEVEL_MAX + FLUID_LEVEL_STEP)).toThrow()
-    expect(() => fluidLevel(1.5)).toThrow()
+    expect(fluidLevelValue(FLUID_LEVEL_MIN)).toBe(FLUID_LEVEL_MIN)
+    expect(fluidLevelValue(FLUID_LEVEL_MAX)).toBe(FLUID_LEVEL_MAX)
+    expect(fluidLevel(FLUID_LEVEL_MIN - FLUID_LEVEL_STEP)._tag).toBe('Invalid')
+    expect(fluidLevel(FLUID_LEVEL_MAX + FLUID_LEVEL_STEP)._tag).toBe('Invalid')
+    expect(fluidLevel(1.5)._tag).toBe('Invalid')
+    expect(fluidLevel(Number.NaN)._tag).toBe('Invalid')
+    expect(fluidLevel(Number.POSITIVE_INFINITY)._tag).toBe('Invalid')
+    expect(fluidLevel(Number.NEGATIVE_INFINITY)._tag).toBe('Invalid')
 
     const position = at(2)
     const otherPosition = at(3)
@@ -105,6 +117,41 @@ describe('fluid data and state', () => {
     const scheduledOnly = scheduleFluidAt(empty, otherPosition)
     const clearedScheduledOnly = clearFluidCell(scheduledOnly, otherPosition)
     expect(clearedScheduledOnly.scheduled.has(blockPositionKeyOf(otherPosition))).toBe(false)
+  })
+
+  it('returns a typed validation failure just outside both level boundaries', () => {
+    expect(fluidLevel(FLUID_LEVEL_MIN)._tag).toBe('Valid')
+    expect(fluidLevel(FLUID_LEVEL_MAX)._tag).toBe('Valid')
+    expect(fluidLevel(FLUID_LEVEL_MIN - FLUID_LEVEL_STEP)._tag).toBe('Invalid')
+    expect(fluidLevel(FLUID_LEVEL_MAX + FLUID_LEVEL_STEP)._tag).toBe('Invalid')
+    const invalid = fluidLevel(FLUID_LEVEL_MIN - FLUID_LEVEL_STEP)
+    if (invalid._tag === 'Invalid') {
+      expect(invalid.error[0]?.message).toBe(
+        `Fluid level must be an integer between ${FLUID_LEVEL_MIN} and ${FLUID_LEVEL_MAX}, received ${String(FLUID_LEVEL_MIN - FLUID_LEVEL_STEP)}`,
+      )
+    }
+    const invalidObject = fluidLevel({ toString: '' })
+    expect(invalidObject._tag).toBe('Invalid')
+    if (invalidObject._tag === 'Invalid') {
+      expect(invalidObject.error[0]?.message).toBe(
+        `Fluid level must be an integer between ${FLUID_LEVEL_MIN} and ${FLUID_LEVEL_MAX}, received object`,
+      )
+    }
+  })
+
+  it('property-checks arbitrary inputs and schema-decodes every valid level', () => {
+    fc.assert(fc.property(fc.anything(), (input) => {
+      const result = fluidLevel(input)
+      const valid =
+        typeof input === 'number' &&
+        Number.isInteger(input) &&
+        input >= FLUID_LEVEL_MIN &&
+        input <= FLUID_LEVEL_MAX
+      expect(result._tag).toBe(valid ? 'Valid' : 'Invalid')
+      if (result._tag === 'Valid') {
+        expect(Schema.decodeUnknownOption(Schema.Number)(result.value)._tag).toBe('Some')
+      }
+    }))
   })
 
   it('derives source cells only from fluid blocks in the world', () => {
@@ -140,14 +187,14 @@ describe('fluid update', () => {
         falling: true,
         fluid: 'water',
         kind: 'flow',
-        level: fluidLevel(SOURCE_FLUID_LEVEL),
+        level: fluidLevelValue(SOURCE_FLUID_LEVEL),
         position: below,
       },
     ])
     expect(fluidCellAt(result.state, below)).toEqual({
       falling: true,
       kind: 'water',
-      level: fluidLevel(SOURCE_FLUID_LEVEL),
+      level: fluidLevelValue(SOURCE_FLUID_LEVEL),
     })
     expect(result.state.scheduled.has(blockPositionKeyOf(below))).toBe(true)
     expect(result.state.scheduled.has(blockPositionKeyOf(source))).toBe(false)
@@ -171,7 +218,7 @@ describe('fluid update', () => {
       expect(fluidCellAt(result.state, neighbour)).toEqual({
         falling: false,
         kind: 'water',
-        level: fluidLevel(FLOWING_FLUID_LEVEL),
+        level: fluidLevelValue(FLOWING_FLUID_LEVEL),
       })
       expect(result.state.scheduled.has(blockPositionKeyOf(neighbour))).toBe(true)
     }
@@ -186,7 +233,7 @@ describe('fluid update', () => {
     let state = setFluidCell(emptyFluidState(), source, {
       falling: false,
       kind: 'water',
-      level: fluidLevel(FLUID_LEVEL_MIN),
+      level: fluidLevelValue(FLUID_LEVEL_MIN),
     })
     state = scheduleFluidAt(state, source)
 
@@ -194,7 +241,7 @@ describe('fluid update', () => {
 
     expect(result.changes).toEqual([])
     expect(result.state.scheduled.size).toBe(0)
-    expect(fluidCellAt(result.state, source)?.level).toBe(fluidLevel(FLUID_LEVEL_MIN))
+    expect(fluidCellAt(result.state, source)?.level).toBe(fluidLevelValue(FLUID_LEVEL_MIN))
   })
 
   it('respects replacement capabilities and water-breakable blocks', () => {
@@ -223,7 +270,7 @@ describe('fluid update', () => {
       falling: false,
       fluid: 'water',
       kind: 'flow',
-      level: fluidLevel(FLOWING_FLUID_LEVEL),
+      level: fluidLevelValue(FLOWING_FLUID_LEVEL),
       position: torchPosition,
     })
 
@@ -251,7 +298,7 @@ describe('fluid update', () => {
       falling: false,
       fluid: 'water',
       kind: 'mix',
-      level: fluidLevel(SOURCE_FLUID_LEVEL),
+      level: fluidLevelValue(SOURCE_FLUID_LEVEL),
       position: target,
     })
 
@@ -260,7 +307,7 @@ describe('fluid update', () => {
     flowingState = setFluidCell(flowingState, target, {
       falling: true,
       kind: 'lava',
-      level: fluidLevel(FLOWING_FLUID_LEVEL),
+      level: fluidLevelValue(FLOWING_FLUID_LEVEL),
     })
     let flowingWorld = place(
       place(emptyBlockWorld(), source, blockIdOf('water')),
@@ -279,7 +326,7 @@ describe('fluid update', () => {
       falling: false,
       fluid: 'water',
       kind: 'mix',
-      level: fluidLevel(FLOWING_FLUID_LEVEL),
+      level: fluidLevelValue(FLOWING_FLUID_LEVEL),
       position: target,
     })
   })
@@ -304,7 +351,7 @@ describe('fluid update', () => {
       falling: false,
       fluid: 'water',
       kind: 'mix',
-      level: fluidLevel(SOURCE_FLUID_LEVEL),
+      level: fluidLevelValue(SOURCE_FLUID_LEVEL),
       position: target,
     })
   })
@@ -373,7 +420,7 @@ describe('fluid update', () => {
     const strongerResult = updateFluids(world, strongerState)
     expect(strongerResult.changes).toEqual([])
     expect(fluidCellAt(strongerResult.state, target)?.level).toBe(
-      fluidLevel(SOURCE_FLUID_LEVEL),
+      fluidLevelValue(SOURCE_FLUID_LEVEL),
     )
 
     const weakerState = setFluidCell(
@@ -385,13 +432,13 @@ describe('fluid update', () => {
       {
         falling: true,
         kind: 'water',
-        level: fluidLevel(FLUID_LEVEL_MIN),
+        level: fluidLevelValue(FLUID_LEVEL_MIN),
       },
     )
     const weakerResult = updateFluids(world, weakerState)
     expect(blockAt(weakerResult.world, target)).toBe(water)
     expect(fluidCellAt(weakerResult.state, target)?.level).toBe(
-      fluidLevel(FLOWING_FLUID_LEVEL),
+      fluidLevelValue(FLOWING_FLUID_LEVEL),
     )
     expect(weakerResult.changes).toContainEqual({
       after: water,
@@ -399,7 +446,7 @@ describe('fluid update', () => {
       falling: false,
       fluid: 'water',
       kind: 'flow',
-      level: fluidLevel(FLOWING_FLUID_LEVEL),
+      level: fluidLevelValue(FLOWING_FLUID_LEVEL),
       position: target,
     })
   })

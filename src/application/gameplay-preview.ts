@@ -11,6 +11,7 @@ import {
   type BlockWorld,
   blockAt,
 } from '../domain/block-world.js'
+import { Brand, Effect, Ref } from 'effect'
 import {
   type ChunkStoreWorldSync,
   makeChunkStoreWorldSync,
@@ -25,11 +26,7 @@ import {
   type TimeService,
   makeControllableSimStagesWithPhysics,
 } from '@nerima-games/mc-sim'
-import { Effect, Ref } from 'effect'
-import {
-  PLAYER_HALF_HEIGHT,
-  PLAYER_HALF_WIDTH,
-} from '@nerima-games/mc-physics'
+import { PLAYER_HALF_HEIGHT, PLAYER_HALF_WIDTH } from '@nerima-games/mc-physics'
 import {
   type WorldMechanicsStageOptions,
   type WorldMechanicsState,
@@ -189,7 +186,7 @@ export const makeGameplayPreview = (
   world: BlockWorld,
   options: GameplayPreviewOptions = DEFAULT_GAMEPLAY_WORLD_MECHANICS_STAGE_OPTIONS,
   worldSync?: ChunkStoreWorldSync,
-): Effect.Effect<GameplayPreview, never, TimeService | PlayerService | CropService> =>
+): Effect.Effect<GameplayPreview, ReturnType<typeof Brand.error>, TimeService | PlayerService | CropService> =>
   Effect.gen(function* makeGameplayPreviewGen() {
     const mechanics = yield* Ref.make(worldMechanicsStateFromWorld(world))
     const runtimeBase = yield* Ref.make(world)
@@ -197,14 +194,17 @@ export const makeGameplayPreview = (
     const simulation = yield* makeControllableSimStagesWithPhysics(
       gameplayPhysicsConfigFor((position) => blockAt(activeWorld, position)),
     )
-    const mechanicsStage = makeWorldMechanicsStage(mechanics, {
+    const mechanicsStageResult = makeWorldMechanicsStage(mechanics, {
       ...options,
       onStateChange: (next) => {
         activeWorld = next.world
         options.onStateChange?.(next)
       },
     })
-    const stages = [...simulation.stages, mechanicsStage]
+    if (mechanicsStageResult._tag === 'Invalid') {
+      return yield* Effect.fail(mechanicsStageResult.error)
+    }
+    const stages = [...simulation.stages, mechanicsStageResult.value]
     const syncWorld = syncWorldEffect({
       mechanics,
       runtimeBase,
@@ -213,12 +213,9 @@ export const makeGameplayPreview = (
       },
       worldSync,
     })
-    const acknowledgeWorld = acknowledgeWorldEffect(worldSync, runtimeBase, mechanics)
-    const close = closeWorldEffect(worldSync)
-
     return {
-      acknowledgeWorld,
-      close,
+      acknowledgeWorld: acknowledgeWorldEffect(worldSync, runtimeBase, mechanics),
+      close: closeWorldEffect(worldSync),
       initialWorld: world,
       mechanics,
       module: {
@@ -237,7 +234,7 @@ export const makeGameplayPreview = (
 export const makeGameplayPreviewFromWorldRuntime = (
   runtime: WorldRuntime,
   options: GameplayPreviewOptions = DEFAULT_GAMEPLAY_WORLD_MECHANICS_STAGE_OPTIONS,
-): Effect.Effect<GameplayPreview, WorldRuntimeSnapshotError, TimeService | PlayerService | CropService> =>
+): Effect.Effect<GameplayPreview, WorldRuntimeSnapshotError | ReturnType<typeof Brand.error>, TimeService | PlayerService | CropService> =>
   Effect.flatMap(makeChunkStoreWorldSync(runtime.chunks), (worldSync) =>
     Effect.flatMap(worldSync.current, (world) =>
       makeGameplayPreview(world, options, worldSync),

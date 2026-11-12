@@ -43,7 +43,7 @@
  * that the rule forbids it to have.
  *
  * ---------------------------------------------------------------------------
- * `Context.Tag` + explicit `Layer`, not `Effect.Service`
+ * `Effect.Tag` + explicit `Layer`, not `Effect.Service`
  * ---------------------------------------------------------------------------
  *
  * Same call as mc-sim (`mc-sim/docs/public-api.md` §0), and doubly so here: a
@@ -101,7 +101,7 @@ const WorldProviderPortBase: Context.TagClass<
   WorldProviderPort,
   '@nerima-games/mc-playground-kit/WorldProviderPort',
   WorldProviderService
-> = Context.Tag('@nerima-games/mc-playground-kit/WorldProviderPort')<WorldProviderPort, WorldProviderService>()
+> = Effect.Tag('@nerima-games/mc-playground-kit/WorldProviderPort')<WorldProviderPort, WorldProviderService>()
 export class WorldProviderPort extends WorldProviderPortBase {}
 
 // ---------------------------------------------------------------------------
@@ -135,7 +135,7 @@ const SimulationPortBase: Context.TagClass<
   SimulationPort,
   '@nerima-games/mc-playground-kit/SimulationPort',
   SimulationService
-> = Context.Tag('@nerima-games/mc-playground-kit/SimulationPort')<SimulationPort, SimulationService>()
+> = Effect.Tag('@nerima-games/mc-playground-kit/SimulationPort')<SimulationPort, SimulationService>()
 export class SimulationPort extends SimulationPortBase {}
 
 // ---------------------------------------------------------------------------
@@ -162,7 +162,7 @@ const RendererPortBase: Context.TagClass<
   RendererPort,
   '@nerima-games/mc-playground-kit/RendererPort',
   RendererService
-> = Context.Tag('@nerima-games/mc-playground-kit/RendererPort')<RendererPort, RendererService>()
+> = Effect.Tag('@nerima-games/mc-playground-kit/RendererPort')<RendererPort, RendererService>()
 export class RendererPort extends RendererPortBase {}
 
 // ---------------------------------------------------------------------------
@@ -200,7 +200,7 @@ const InputPortBase: Context.TagClass<
   InputPort,
   '@nerima-games/mc-playground-kit/InputPort',
   PreviewInputService
-> = Context.Tag('@nerima-games/mc-playground-kit/InputPort')<InputPort, PreviewInputService>()
+> = Effect.Tag('@nerima-games/mc-playground-kit/InputPort')<InputPort, PreviewInputService>()
 export class InputPort extends InputPortBase {}
 
 /**
