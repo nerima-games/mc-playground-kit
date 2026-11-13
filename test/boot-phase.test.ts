@@ -24,7 +24,6 @@ import {
   elapsedMillis,
   type BootPhase,
   type PhaseTiming,
-  type PhaseTimingInput,
 } from '../src/domain/boot-phase'
 
 const durationValue = (value: number) => {
@@ -38,7 +37,7 @@ const timing = (phase: BootPhase, durationMillis: number): PhaseTiming => ({
   durationMillis: durationValue(durationMillis),
 })
 
-const unvalidatedTiming = (phase: BootPhase, durationMillis: number): PhaseTimingInput => ({
+const unvalidatedTiming = (phase: BootPhase, durationMillis: number) => ({
   phase,
   durationMillis,
 })
@@ -420,7 +419,7 @@ describe('DurationMillis', () => {
 
   it.effect('validates generated valid and invalid inputs without changing valid values', () =>
     Effect.sync(() => {
-      const validInputs = fc.double({ min: 0, max: 1_000_000 }).map((input) => ({
+      const validInputs = fc.double({ min: 0, max: 1_000_000, noNaN: true }).map((input) => ({
         expected: 'Valid' as const,
         input,
       }))

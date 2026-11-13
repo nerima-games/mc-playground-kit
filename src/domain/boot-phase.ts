@@ -215,7 +215,7 @@ export type PhaseTiming = {
   readonly durationMillis: DurationMillis
 }
 
-export type PhaseTimingInput = {
+type PhaseTimingInput = {
   readonly phase: BootPhase
   readonly durationMillis: number
 }
