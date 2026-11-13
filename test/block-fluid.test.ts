@@ -5,6 +5,7 @@ import {
   blockPosition,
   position,
 } from '@nerima-games/mc-kernel'
+import assert from 'node:assert/strict'
 import { describe, expect, it } from 'vitest'
 import {
   blockFluidAt,
@@ -19,6 +20,12 @@ import {
   setBlockAt,
   setFluidCell,
 } from '../src/domain/block-interaction'
+
+const fluidLevelValue = (value: number) => {
+  const result = fluidLevel(value)
+  assert(result._tag === 'Valid')
+  return result.value
+}
 
 const at = (x: number) => blockPosition(x, 0, 0)
 
@@ -103,12 +110,12 @@ describe('block fluid occupancy', () => {
     state = setFluidCell(state, at(0), {
       falling: false,
       kind: 'water',
-      level: fluidLevel(3),
+      level: fluidLevelValue(3),
     })
     state = setFluidCell(state, at(1), {
       falling: true,
       kind: 'lava',
-      level: fluidLevel(1),
+      level: fluidLevelValue(1),
     })
 
     expect(fluidVolumeAt(world, state, at(0))).toEqual({
@@ -116,7 +123,7 @@ describe('block fluid occupancy', () => {
       bounds: aabb(position(0, 0, 0), position(1, 0.375, 1)),
       falling: false,
       kind: 'water',
-      level: fluidLevel(3),
+      level: fluidLevelValue(3),
       position: at(0),
     })
     expect(fluidVolumeAt(world, state, at(1))).toEqual({
@@ -124,7 +131,7 @@ describe('block fluid occupancy', () => {
       bounds: aabb(position(1, 0, 0), position(2, 1, 1)),
       falling: true,
       kind: 'lava',
-      level: fluidLevel(1),
+      level: fluidLevelValue(1),
       position: at(1),
     })
     expect(fluidVolumeAt(world, emptyFluidState(), at(0))).toBeNull()
@@ -140,7 +147,7 @@ describe('block fluid occupancy', () => {
         bounds: aabb(position(1, 0, 0), position(2, 1, 1)),
         falling: true,
         kind: 'lava',
-        level: fluidLevel(1),
+        level: fluidLevelValue(1),
         position: at(1),
       },
     ])

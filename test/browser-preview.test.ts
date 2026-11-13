@@ -1,12 +1,18 @@
 /* oxlint-disable curly, func-names, max-statements, no-magic-numbers, no-undefined, no-use-before-define, sort-imports, sort-keys -- Test fixtures favor direct state assertions over production-style decomposition. */
 import { describe, expect, it } from '@effect/vitest'
-import { Deferred, Effect, Either, Option } from 'effect'
+import { Deferred, Effect, Option } from 'effect'
 import type { DeltaTimeSecs } from '@nerima-games/mc-kernel'
 import {
   makeBrowserPreview,
   type BrowserFrameScheduler,
   type BrowserPreviewRuntime,
 } from '../src/index'
+
+const resultOf = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  Effect.match(effect, {
+    onFailure: (error) => ({ _tag: 'Failure' as const, error }),
+    onSuccess: (value) => ({ _tag: 'Success' as const, value }),
+  })
 
 const fakeDom = () => {
   const children: Array<unknown> = []
@@ -232,10 +238,10 @@ describe('browser preview', () => {
         }),
       })
 
-      const result = yield* Effect.either(preview.start)
-      expect(Either.isLeft(result)).toBe(true)
-      if (Either.isRight(result)) return
-      expect(result.left).toMatchObject({ cause: 'webgl-unavailable', rollbackFailures: [] })
+      const result = yield* resultOf(preview.start)
+      expect(result._tag).toBe('Failure')
+      if (result._tag === 'Success') return
+      expect(result.error).toMatchObject({ cause: 'webgl-unavailable', rollbackFailures: [] })
       expect(cleaned).toBe(1)
       expect(dom.children).toHaveLength(0)
       expect(Option.isNone(yield* preview.current)).toBe(true)
@@ -318,10 +324,10 @@ describe('browser preview', () => {
         startRuntime: () => Effect.succeed({ stop: Effect.void }),
       })
 
-      const result = yield* Effect.either(preview.start)
-      expect(Either.isLeft(result)).toBe(true)
-      if (Either.isRight(result)) return
-      expect(result.left).toMatchObject({ cause: 'reason-x', rollbackFailures: [] })
+      const result = yield* resultOf(preview.start)
+      expect(result._tag).toBe('Failure')
+      if (result._tag === 'Success') return
+      expect(result.error).toMatchObject({ cause: 'reason-x', rollbackFailures: [] })
       expect(dom.children).toHaveLength(0)
     }),
   )
@@ -339,10 +345,10 @@ describe('browser preview', () => {
       })
 
       yield* preview.start
-      const result = yield* Effect.either(preview.stop)
-      expect(Either.isLeft(result)).toBe(true)
-      if (Either.isRight(result)) return
-      expect(result.left).toMatchObject({
+      const result = yield* resultOf(preview.stop)
+      expect(result._tag).toBe('Failure')
+      if (result._tag === 'Success') return
+      expect(result.error).toMatchObject({
         _tag: 'BrowserPreviewStopError',
         failures: ['runtime-stop-boom'],
       })
@@ -415,10 +421,10 @@ describe('browser preview', () => {
       })
 
       yield* preview.start
-      const result = yield* Effect.either(preview.stop)
-      expect(Either.isLeft(result)).toBe(true)
-      if (Either.isRight(result)) return
-      expect(result.left).toMatchObject({ _tag: 'BrowserPreviewStopError', failures: [boom] })
+      const result = yield* resultOf(preview.stop)
+      expect(result._tag).toBe('Failure')
+      if (result._tag === 'Success') return
+      expect(result.error).toMatchObject({ _tag: 'BrowserPreviewStopError', failures: [boom] })
     }),
   )
 

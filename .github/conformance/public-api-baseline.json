@@ -1,0 +1,272 @@
+[
+  {
+    "count": 1,
+    "file": "apps/preview-harness/harness.ts",
+    "ruleId": "no-effect-run-outside-entrypoints",
+    "text": "Effect.runPromise( Effect.flatMap(Playground, (api) => Effect.succeed(api)).pipe(Effect.provide(fakes)), )"
+  },
+  {
+    "count": 1,
+    "file": "apps/preview-harness/harness.ts",
+    "ruleId": "no-effect-run-outside-entrypoints",
+    "text": "Effect.runPromise( Effect.gen(function* () { const currentOption = yield* playground.current const handle = liveHandle return { step, lastCommand, launches, current: history[history.length - 1], history: [...history], isRunning: handle === undefined ? false : yield* handle.isRunning, currentIsSome: Option.isSome(currentOption), framesSubmitted, framesRendered: handle === undefined ? 0 : yield* handle.framesRendered, cameraPose: yield* Ref.get(poseRef), clockMillis: yield* Ref.get(state.clockMillis), calls: [...calls], ghostTeardowns: [...ghostTeardowns], ghostSeqs: [...ghostSeqs], frameStagesEvaluations: yield* Ref.get(state.stageEvaluations), log: [...log], } satisfies HarnessView }), )"
+  },
+  {
+    "count": 1,
+    "file": "apps/preview-harness/harness.ts",
+    "ruleId": "no-effect-run-outside-entrypoints",
+    "text": "Effect.runPromise( Effect.gen(function* () { return { clockMillis: yield* Ref.make(0), stageEvaluations: yield* Ref.make(0), } }), )"
+  },
+  {
+    "count": 1,
+    "file": "apps/preview-harness/harness.ts",
+    "ruleId": "no-effect-run-outside-entrypoints",
+    "text": "Effect.runPromise(Effect.repeatN(oneStep, count - 1).pipe(Effect.asVoid))"
+  },
+  {
+    "count": 1,
+    "file": "apps/preview-harness/harness.ts",
+    "ruleId": "no-effect-run-outside-entrypoints",
+    "text": "Effect.runPromise(Ref.make<CameraPoseSnapshot | undefined>(undefined))"
+  },
+  {
+    "count": 1,
+    "file": "src/application/browser-preview.ts",
+    "ruleId": "no-effect-run-outside-entrypoints",
+    "text": "Effect.runFork(loop.submitFrame(MonotonicTimeSecs(timestamp / 1_000)))"
+  },
+  {
+    "count": 1,
+    "file": "src/application/browser-preview.ts",
+    "ruleId": "no-effect-run-outside-entrypoints",
+    "text": "Effect.runFork(mutex.withPermits(1)(stopUnlocked))"
+  },
+  {
+    "count": 1,
+    "file": "src/application/playground-service.ts",
+    "ruleId": "no-raw-exported-function-parameter",
+    "text": "string"
+  },
+  {
+    "count": 2,
+    "file": "src/domain/boot-phase.ts",
+    "ruleId": "no-raw-exported-function-parameter",
+    "text": "number"
+  },
+  {
+    "count": 3,
+    "file": "src/domain/chunk-world.ts",
+    "ruleId": "no-raw-exported-function-parameter",
+    "text": "number"
+  },
+  {
+    "count": 1,
+    "file": "src/domain/crop-growth.ts",
+    "ruleId": "no-raw-exported-function-parameter",
+    "text": "number"
+  },
+  {
+    "count": 2,
+    "file": "src/domain/fire-lifecycle.ts",
+    "ruleId": "no-raw-exported-function-parameter",
+    "text": "number"
+  },
+  {
+    "count": 1,
+    "file": "src/domain/flat-chunk.ts",
+    "ruleId": "no-raw-exported-function-parameter",
+    "text": "number"
+  },
+  {
+    "count": 1,
+    "file": "src/domain/piston.ts",
+    "ruleId": "no-raw-exported-function-parameter",
+    "text": "number"
+  },
+  {
+    "count": 1,
+    "file": "src/domain/redstone-devices.ts",
+    "ruleId": "no-raw-exported-function-parameter",
+    "text": "number"
+  },
+  {
+    "count": 4,
+    "file": "src/domain/redstone-devices.ts",
+    "ruleId": "no-raw-exported-function-parameter",
+    "text": "string"
+  },
+  {
+    "count": 1,
+    "file": "src/domain/status-effect.ts",
+    "ruleId": "no-raw-exported-function-parameter",
+    "text": "number"
+  },
+  {
+    "count": 2,
+    "file": "src/domain/wither-interaction.ts",
+    "ruleId": "no-raw-exported-function-parameter",
+    "text": "number"
+  },
+  {
+    "count": 1,
+    "file": "src/application/frame-scheduling.ts",
+    "ruleId": "no-raw-exported-function-return",
+    "text": "number"
+  },
+  {
+    "count": 1,
+    "file": "src/domain/boot-phase.ts",
+    "ruleId": "no-raw-exported-function-return",
+    "text": "string"
+  },
+  {
+    "count": 1,
+    "file": "src/domain/fire-lifecycle.ts",
+    "ruleId": "no-raw-exported-function-return",
+    "text": "number"
+  },
+  {
+    "count": 2,
+    "file": "src/application/browser-preview.ts",
+    "ruleId": "no-raw-exported-type-field",
+    "text": "number"
+  },
+  {
+    "count": 1,
+    "file": "src/application/frame-scheduling.ts",
+    "ruleId": "no-raw-exported-type-field",
+    "text": "number"
+  },
+  {
+    "count": 3,
+    "file": "src/application/playground-contracts.ts",
+    "ruleId": "no-raw-exported-type-field",
+    "text": "number"
+  },
+  {
+    "count": 2,
+    "file": "src/application/world-runtime-persistence.ts",
+    "ruleId": "no-raw-exported-type-field",
+    "text": "number"
+  },
+  {
+    "count": 3,
+    "file": "src/domain/block-breaking.ts",
+    "ruleId": "no-raw-exported-type-field",
+    "text": "number"
+  },
+  {
+    "count": 1,
+    "file": "src/domain/block-contact.ts",
+    "ruleId": "no-raw-exported-type-field",
+    "text": "number"
+  },
+  {
+    "count": 1,
+    "file": "src/domain/block-placement.ts",
+    "ruleId": "no-raw-exported-type-field",
+    "text": "number"
+  },
+  {
+    "count": 1,
+    "file": "src/domain/block-targeting.ts",
+    "ruleId": "no-raw-exported-type-field",
+    "text": "number"
+  },
+  {
+    "count": 5,
+    "file": "src/domain/chunk-world.ts",
+    "ruleId": "no-raw-exported-type-field",
+    "text": "number"
+  },
+  {
+    "count": 1,
+    "file": "src/domain/chunk-world.ts",
+    "ruleId": "no-raw-exported-type-field",
+    "text": "string"
+  },
+  {
+    "count": 1,
+    "file": "src/domain/crop-growth.ts",
+    "ruleId": "no-raw-exported-type-field",
+    "text": "number"
+  },
+  {
+    "count": 1,
+    "file": "src/domain/crop-planting.ts",
+    "ruleId": "no-raw-exported-type-field",
+    "text": "number"
+  },
+  {
+    "count": 10,
+    "file": "src/domain/fire-lifecycle.ts",
+    "ruleId": "no-raw-exported-type-field",
+    "text": "number"
+  },
+  {
+    "count": 3,
+    "file": "src/domain/fire-lifecycle.ts",
+    "ruleId": "no-raw-exported-type-field",
+    "text": "string"
+  },
+  {
+    "count": 4,
+    "file": "src/domain/furnace-interaction.ts",
+    "ruleId": "no-raw-exported-type-field",
+    "text": "number"
+  },
+  {
+    "count": 7,
+    "file": "src/domain/launch-options.ts",
+    "ruleId": "no-raw-exported-type-field",
+    "text": "number"
+  },
+  {
+    "count": 2,
+    "file": "src/domain/launch-options.ts",
+    "ruleId": "no-raw-exported-type-field",
+    "text": "string"
+  },
+  {
+    "count": 5,
+    "file": "src/domain/piston.ts",
+    "ruleId": "no-raw-exported-type-field",
+    "text": "number"
+  },
+  {
+    "count": 1,
+    "file": "src/domain/redstone-state.ts",
+    "ruleId": "no-raw-exported-type-field",
+    "text": "number"
+  },
+  {
+    "count": 2,
+    "file": "src/domain/redstone-state.ts",
+    "ruleId": "no-raw-exported-type-field",
+    "text": "string"
+  },
+  {
+    "count": 1,
+    "file": "src/domain/redstone-update-types.ts",
+    "ruleId": "no-raw-exported-type-field",
+    "text": "string"
+  },
+  {
+    "count": 12,
+    "file": "src/domain/status-effect.ts",
+    "ruleId": "no-raw-exported-type-field",
+    "text": "number"
+  },
+  {
+    "count": 1,
+    "file": "src/domain/status-effect.ts",
+    "ruleId": "no-raw-exported-type-field",
+    "text": "string"
+  },
+  {
+    "count": 1,
+    "file": "src/domain/world-mechanics.ts",
+    "ruleId": "no-raw-exported-type-field",
+    "text": "number"
+  }
+]

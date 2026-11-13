@@ -7,7 +7,8 @@
  * to be a real invariant belongs in `test/`, where it can fail CI; each note
  * says which test holds the claim and what the number used to be.
  */
-import { Effect, Layer, Option, Ref } from 'effect'
+import { Brand, Effect, Layer, Option, Ref } from 'effect'
+import assert from 'node:assert/strict'
 import { Playground, PlaygroundLayer, type PlaygroundHandle } from '../../src/application/playground'
 import {
   InputPort,
@@ -25,6 +26,18 @@ import {
   DurationMillis,
   elapsedMillis,
 } from '../../src/domain/boot-phase'
+
+const durationMillisValue = (value: number) => {
+  const result = DurationMillis(value)
+  assert(result._tag === 'Valid')
+  return result.value
+}
+
+const verdictOf = (timings: Parameters<typeof classifyBootTimings>[0]) => {
+  const result = classifyBootTimings(timings)
+  assert(result._tag === 'Valid')
+  return result.value
+}
 import {
   DEFAULT_FLAT_WORLD,
   DEFAULT_SPAWN_KIT,
@@ -259,19 +272,19 @@ const doubleRegistrationProbe = Effect.gen(function* () {
 const budgetProbe = (): ReadonlyArray<string> => {
   const sum = BOOT_PHASE_ORDER.reduce((total, phase) => total + BOOT_PHASE_BUDGET_MILLIS[phase], 0)
 
-  const onBudget = classifyBootTimings(
+  const onBudget = verdictOf(
     BOOT_PHASE_ORDER.map((phase) => ({
       phase,
-      durationMillis: DurationMillis(BOOT_PHASE_BUDGET_MILLIS[phase]),
+      durationMillis: durationMillisValue(BOOT_PHASE_BUDGET_MILLIS[phase]),
     })),
   )
-  const slowWorld = classifyBootTimings(
+  const slowWorld = verdictOf(
     BOOT_PHASE_ORDER.map((phase) => ({
       phase,
-      durationMillis: DurationMillis(phase === 'world' ? 900 : 0),
+      durationMillis: durationMillisValue(phase === 'world' ? 900 : 0),
     })),
   )
-  const partial = classifyBootTimings([{ phase: 'world', durationMillis: DurationMillis(900) }])
+  const partial = verdictOf([{ phase: 'world', durationMillis: durationMillisValue(900) }])
 
   const nonFinite = [
     ['0 -> Infinity', 0, Number.POSITIVE_INFINITY],
@@ -282,11 +295,8 @@ const budgetProbe = (): ReadonlyArray<string> => {
   ] as const
 
   const nonFiniteRows = nonFinite.map(([label, from, to]) => {
-    try {
-      return `   ${cell(label, 34)}${String(elapsedMillis(from, to))}`
-    } catch {
-      return `   ${cell(label, 34)}THREW (DurationMillis rejected it)`
-    }
+    const result = elapsedMillis(from, to)
+    return `   ${cell(label, 34)}${result._tag === 'Valid' ? String(result.value) : `Invalid: ${result.error[0]?.message}`}`
   })
 
   return [
@@ -310,15 +320,11 @@ const budgetProbe = (): ReadonlyArray<string> => {
     '   A missing phase is not "0 ms"; it is a boot that did not do something, and the verdict says',
     '   so separately from the arithmetic. That is the distinction a single number would lose.',
     '',
-    ...section('ELAPSED-MILLIS', 'elapsedMillis clamps a backwards interval. What about a broken one?'),
+    ...section('ELAPSED-MILLIS', 'elapsedMillis rejects backwards and broken clock readings.'),
     ...nonFiniteRows,
     '',
-    '   elapsedMillis is TOTAL: every pair of `number`s maps to a DurationMillis, and no row above',
-    '   can throw. It used to clamp only the negative case, which left `DurationMillis` — a',
-    '   Brand.refined constructor requiring `Number.isFinite(value) && value >= 0` — to reject a',
-    '   non-finite reading by THROWING, inside `phase()`, inside a `launch` whose signature is',
-    '   `Effect<PlaygroundHandle, never, ...>`. The error channel says a launch cannot fail; a',
-    '   defect is not in the error channel, and the launch died.',
+    '   elapsedMillis returns a typed Valid | Invalid result. A negative or non-finite interval',
+    '   is rejected, and boot carries that failure through the Effect error channel.',
     '',
     '   How reachable that was depends on the clock. `MonotonicTimeSecs` is itself refined, so a',
     '   well-formed ClockPort cannot produce Infinity — but `elapsedMillis` does not take',
@@ -326,11 +332,7 @@ const budgetProbe = (): ReadonlyArray<string> => {
     '   ClockPort tag at run time while its fields read `undefined`. `undefined - undefined`',
     '   is NaN — the third row above.',
     '',
-    '   Zero rather than an invented large duration, because a fabricated number would make',
-    '   classifyBootTimings name a specific phase as overrunning by a specific amount and send',
-    '   somebody to optimise work that was never measured. Zero says only what the backwards clamp',
-    '   already says. Pinned by test/boot-phase.test.ts `REGRESSION: a non-finite reading is a',
-    '   zero, not a defect that kills the launch`.',
+    '   This avoids treating a broken clock as a successful zero-millisecond phase.',
   ]
 }
 
@@ -398,7 +400,11 @@ const FOOTER: ReadonlyArray<string> = [
   '   fixtures in apps/preview-harness/harness.ts are the shape they have to satisfy.',
 ]
 
-export const statsReport: Effect.Effect<ReadonlyArray<string>, WorldProviderError, never> = Effect.gen(function* () {
+export const statsReport: Effect.Effect<
+  ReadonlyArray<string>,
+  WorldProviderError | ReturnType<typeof Brand.error>,
+  never
+> = Effect.gen(function* () {
   return [
     ...HEADER,
     ...(yield* staleStopProbe),

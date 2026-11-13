@@ -7,11 +7,13 @@ import {
 import { Cause, Data, Effect } from 'effect'
 import {
   type ChunkWorld,
-  emptyChunkWorld,
+  blockWorldOfChunkWorldEffect,
   kernelChunkFromBlocks,
   storeChunkInChunkWorld,
 } from '../domain/chunk-world.js'
 import { type Chunk as KernelChunk, chunkCoord } from '@nerima-games/mc-kernel'
+
+const DEFAULT_WORLD_MIN_Y = 0
 
 export type WorldRuntimeSnapshotReason =
   | 'chunk-unloaded-during-snapshot'
@@ -19,9 +21,9 @@ export type WorldRuntimeSnapshotReason =
   | 'invalid-chunk'
 
 type WorldRuntimeSnapshotErrorFields = {
-  readonly reason: WorldRuntimeSnapshotReason
   readonly cx?: number
   readonly cz?: number
+  readonly reason: WorldRuntimeSnapshotReason
 }
 // TypeScript's `isolatedDeclarations` cannot infer through `extends Data.TaggedError(...)<...>()`, an instantiation expression; hoisting it into an explicitly typed const (same pattern as mc-kernel's ClockPort in src/domain/clock.ts) gives the extends clause a plain identifier.
 const WorldRuntimeSnapshotErrorBase: new (
@@ -30,6 +32,15 @@ const WorldRuntimeSnapshotErrorBase: new (
   // oxlint-disable-next-line new-cap -- Effect exposes TaggedError as a factory with a constructor-shaped name.
   Data.TaggedError('WorldRuntimeSnapshotError')<WorldRuntimeSnapshotErrorFields>
 export class WorldRuntimeSnapshotError extends WorldRuntimeSnapshotErrorBase {}
+
+type ChunkWorldDataFailure = Effect.Effect.Error<ReturnType<typeof blockWorldOfChunkWorldEffect>>
+
+export const worldRuntimeSnapshotErrorFromChunkWorldFailure = (
+  failure: ChunkWorldDataFailure,
+): WorldRuntimeSnapshotError => new WorldRuntimeSnapshotError({
+  reason: 'invalid-chunk',
+  ...failure.coordinates,
+})
 
 const coordKeyOf = (coord: { readonly cx: number; readonly cz: number }): string =>
   `${String(coord.cx)},${String(coord.cz)}`
@@ -72,18 +83,42 @@ export const snapshotChunk = (
       )
     }
 
-    try {
-      return Effect.succeed(kernelChunkOf(value))
-    } catch {
-      return Effect.fail(
+    return Effect.try({
+      catch: () =>
         new WorldRuntimeSnapshotError({
           cx: coord.cx,
           cz: coord.cz,
           reason: 'invalid-chunk',
         }),
-      )
-    }
+      try: () => kernelChunkOf(value),
+    })
   })
+
+const assertLoadedCoordsUnchanged = (
+  store: ChunkStoreApi,
+  loadedCoords: ReadonlyArray<GeneratedChunkCoord>,
+): Effect.Effect<void, WorldRuntimeSnapshotError> =>
+  Effect.flatMap(store.loadedCoords, (currentLoadedCoords) => {
+    if (sameLoadedCoords(loadedCoords, currentLoadedCoords)) {
+      return Effect.void
+    }
+    return Effect.fail(new WorldRuntimeSnapshotError({ reason: 'loaded-set-changed' }))
+  })
+
+const worldOfChunks = (
+  chunks: ReadonlyArray<KernelChunk>,
+): Effect.Effect<ChunkWorld, WorldRuntimeSnapshotError> => {
+  let world: ChunkWorld = {
+    chunks: new Map(),
+    height: CHUNK_HEIGHT,
+    minY: DEFAULT_WORLD_MIN_Y,
+  }
+  for (const value of chunks) {
+    const { world: nextWorld } = storeChunkInChunkWorld(world, value)
+    world = nextWorld
+  }
+  return Effect.succeed(world)
+}
 
 export const snapshotWorldRuntime = (
   store: ChunkStoreApi,
@@ -91,19 +126,6 @@ export const snapshotWorldRuntime = (
   Effect.gen(function* snapshotWorldRuntimeGen() {
     const loadedCoords = yield* store.loadedCoords
     const chunks = yield* Effect.forEach(loadedCoords, (coord) => snapshotChunk(store, coord))
-    const currentLoadedCoords = yield* store.loadedCoords
-
-    if (!sameLoadedCoords(loadedCoords, currentLoadedCoords)) {
-      return yield* Effect.fail(
-        new WorldRuntimeSnapshotError({ reason: 'loaded-set-changed' }),
-      )
-    }
-
-    let world = emptyChunkWorld(CHUNK_HEIGHT)
-    for (const value of chunks) {
-      const { world: nextWorld } = storeChunkInChunkWorld(world, value)
-      world = nextWorld
-    }
-
-    return world
+    yield* assertLoadedCoordsUnchanged(store, loadedCoords)
+    return yield* worldOfChunks(chunks)
   })

@@ -23,10 +23,39 @@ export type RedstoneDeviceStateUpdate = {
   readonly repeaterTimers: ReadonlyMap<BlockPositionKey, RedstoneRepeaterTimer>
 }
 
-export const redstonePower: Brand.Brand.Constructor<RedstonePower> = Brand.refined<RedstonePower>(
-  (value) => Number.isInteger(value) && value >= REDSTONE_POWER_MIN && value <= REDSTONE_POWER_MAX,
-  (value) => Brand.error(`Redstone power must be an integer between ${REDSTONE_POWER_MIN} and ${REDSTONE_POWER_MAX}, received ${value}`),
-)
+type RedstonePowerResult =
+  | { readonly _tag: 'Valid'; readonly value: RedstonePower }
+  | { readonly _tag: 'Invalid'; readonly error: ReturnType<typeof Brand.error> }
+
+const redstonePowerBrand = Brand.nominal<RedstonePower>()
+
+const safeValueLabel = (value: unknown): string => {
+  if (value !== null && (typeof value === 'object' || typeof value === 'function')) {
+    return typeof value
+  }
+  return String(value)
+}
+
+const isRedstonePower = (value: unknown): value is RedstonePower =>
+  typeof value === 'number' &&
+  Number.isInteger(value) &&
+  value >= REDSTONE_POWER_MIN &&
+  value <= REDSTONE_POWER_MAX
+
+export const redstonePower = (value: unknown): RedstonePowerResult => {
+  if (!isRedstonePower(value)) {
+    return {
+      _tag: 'Invalid',
+      error: Brand.error(`Redstone power must be an integer between ${REDSTONE_POWER_MIN} and ${REDSTONE_POWER_MAX}, received ${safeValueLabel(value)}`),
+    }
+  }
+
+  return { _tag: 'Valid', value: redstonePowerBrand(value) }
+}
+
+// These defaults are fixed in-range constants. Dynamic external values must
+// Use `redstonePower` and inspect its typed result.
+const redstonePowerFromInvariant = redstonePowerBrand
 
 export type RedstoneState = {
   readonly deviceOutputs: ReadonlyMap<BlockPositionKey, RedstonePower>
@@ -54,13 +83,13 @@ export const redstoneInputAt = (
 export const redstonePowerAt = (
   state: RedstoneState,
   position: BlockPosition,
-): RedstonePower => state.wires.get(blockPositionKeyOf(position)) ?? redstonePower(REDSTONE_POWER_MIN)
+): RedstonePower => state.wires.get(blockPositionKeyOf(position)) ?? redstonePowerFromInvariant(REDSTONE_POWER_MIN)
 
 export const redstoneDevicePowerAt = (
   state: RedstoneState,
   position: BlockPosition,
 ): RedstonePower =>
-  state.deviceOutputs.get(blockPositionKeyOf(position)) ?? redstonePower(REDSTONE_POWER_MIN)
+  state.deviceOutputs.get(blockPositionKeyOf(position)) ?? redstonePowerFromInvariant(REDSTONE_POWER_MIN)
 
 export const redstoneDeviceAt = (
   state: RedstoneState,

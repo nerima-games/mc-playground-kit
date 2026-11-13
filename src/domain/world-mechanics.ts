@@ -1,4 +1,4 @@
-import { Effect, Ref } from 'effect'
+import { Brand, Effect, Ref } from 'effect'
 import { type RedstoneState, emptyRedstoneState } from './redstone-state.js'
 import {
   type StageId,
@@ -66,6 +66,10 @@ export type WorldMechanicsStageOptions = {
   readonly tickIntervalSecs?: number
 }
 
+type WorldMechanicsStageResult =
+  | { readonly _tag: 'Valid'; readonly value: StageRegistration }
+  | { readonly _tag: 'Invalid'; readonly error: ReturnType<typeof Brand.error> }
+
 const advanceWorldMechanicsTicks = (
   current: WorldMechanicsState,
   tickCount: number,
@@ -86,7 +90,7 @@ const advanceWorldMechanicsTicks = (
 export const makeWorldMechanicsStage = (
   state: Ref.Ref<WorldMechanicsState>,
   options: WorldMechanicsStageOptions,
-): StageRegistration => {
+): WorldMechanicsStageResult => {
   const tickIntervalSecs =
     options.tickIntervalSecs ?? WORLD_TICK_INTERVAL_SECS
 
@@ -94,7 +98,10 @@ export const makeWorldMechanicsStage = (
     !Number.isFinite(tickIntervalSecs) ||
     tickIntervalSecs <= MIN_TICK_INTERVAL_SECS
   ) {
-    throw new RangeError('tickIntervalSecs must be a finite positive number')
+    return {
+      _tag: 'Invalid',
+      error: Brand.error('tickIntervalSecs must be a finite positive number'),
+    }
   }
 
   let accumulatedSecs = INITIAL_ELAPSED_SECS
@@ -122,11 +129,14 @@ export const makeWorldMechanicsStage = (
   }
 
   if (!options.after) {
-    return stage
+    return { _tag: 'Valid', value: stage }
   }
 
   return {
-    ...stage,
-    after: options.after,
+    _tag: 'Valid',
+    value: {
+      ...stage,
+      after: options.after,
+    },
   }
 }

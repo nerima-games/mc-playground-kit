@@ -17,6 +17,12 @@ import { WorldProviderPort } from '../src/application/preview-ports'
 import { DEFAULT_FLAT_WORLD } from '../src/domain/launch-options'
 import { emptyBlockWorld, setBlockAt } from '../src/domain/block-world'
 
+const resultOf = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  Effect.match(effect, {
+    onFailure: (error) => ({ _tag: 'Failure' as const, error }),
+    onSuccess: (value) => ({ _tag: 'Success' as const, value }),
+  })
+
 describe('persistBlockWorld', () => {
   it.effect('writes additions, recognizes unchanged blocks, and writes removals', () =>
     Effect.gen(function* () {
@@ -96,18 +102,18 @@ describe('persistBlockWorld', () => {
       ]
 
       for (const { outcome, position } of cases) {
-        const result = yield* Effect.either(
+        const result = yield* resultOf(
           persistBlockWorld(
             opened.value,
             empty,
             setBlockAt(empty, position, stone),
           ),
         )
-        expect(result._tag).toBe('Left')
-        if (result._tag === 'Left') {
-          expect(result.left).toBeInstanceOf(WorldRuntimePersistenceError)
-          expect(result.left.outcome).toBe(outcome)
-          expect(result.left.position).toEqual(position)
+        expect(result._tag).toBe('Failure')
+        if (result._tag === 'Failure') {
+          expect(result.error).toBeInstanceOf(WorldRuntimePersistenceError)
+          expect(result.error.outcome).toBe(outcome)
+          expect(result.error.position).toEqual(position)
         }
       }
     }).pipe(Effect.provide(GeneratedWorldProviderLayer({ terrain: { decorate: false } }))),
@@ -146,14 +152,14 @@ describe('persistBlockWorld', () => {
           getBlock: () => Effect.succeed(reading),
           setBlock: () => Effect.succeed({ _tag: outcome }),
         })
-        const result = yield* Effect.either(
+        const result = yield* resultOf(
           persistBlockWorld(runtime, empty, next),
         )
 
-        expect(result._tag).toBe('Left')
-        if (result._tag === 'Left') {
-          expect(result.left).toBeInstanceOf(WorldRuntimePersistenceError)
-          expect(result.left.outcome).toBe(outcome)
+        expect(result._tag).toBe('Failure')
+        if (result._tag === 'Failure') {
+          expect(result.error).toBeInstanceOf(WorldRuntimePersistenceError)
+          expect(result.error.outcome).toBe(outcome)
         }
       }
     }).pipe(Effect.provide(GeneratedWorldProviderLayer({ terrain: { decorate: false } }))),

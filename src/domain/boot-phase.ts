@@ -43,7 +43,7 @@ import { Brand } from 'effect'
 // Duration
 // ---------------------------------------------------------------------------
 
-/** The floor (and the finite-conversion fallback) for every `DurationMillis`: durations do not go negative. */
+/** Additive identity for boot timing arithmetic. */
 const ZERO_DURATION_MILLIS = 0
 /** Conversion factor between `MonotonicTimeSecs`'s seconds and `DurationMillis`'s milliseconds. */
 const MILLIS_PER_SECOND = 1000
@@ -65,45 +65,57 @@ const DISPLAY_DECIMAL_PLACES = 1
  */
 export type DurationMillis = number & Brand.Brand<'DurationMillis'>
 
-export const DurationMillis: Brand.Brand.Constructor<DurationMillis> = Brand.refined<DurationMillis>(
-  (value) => Number.isFinite(value) && value >= ZERO_DURATION_MILLIS,
-  (value) => Brand.error(`DurationMillis must be a finite, non-negative number of milliseconds, received ${value}`),
-)
+type ValidationResult<A> =
+  | { readonly _tag: 'Valid'; readonly value: A }
+  | { readonly _tag: 'Invalid'; readonly error: ReturnType<typeof Brand.error> }
+
+type DurationMillisResult = ValidationResult<DurationMillis>
+
+const durationMillisBrand = Brand.nominal<DurationMillis>()
+
+const safeValueLabel = (value: unknown): string => {
+  if (value !== null && (typeof value === 'object' || typeof value === 'function')) {
+    return typeof value
+  }
+  return String(value)
+}
+
+const isDurationMillis = (value: unknown): value is DurationMillis =>
+  typeof value === 'number' && Number.isFinite(value) && value >= ZERO_DURATION_MILLIS
+
+export const DurationMillis = (value: unknown): DurationMillisResult => {
+  if (!isDurationMillis(value)) {
+    return {
+      _tag: 'Invalid',
+      error: Brand.error(`DurationMillis must be a finite, non-negative number of milliseconds, received ${safeValueLabel(value)}`),
+    }
+  }
+
+  return { _tag: 'Valid', value: durationMillisBrand(value) }
+}
+
+// Internal duration values come from fixed non-negative budgets. Untrusted
+// Numbers go through `DurationMillis`.
+const durationMillisFromInvariant = (value: number): DurationMillis => durationMillisBrand(value)
 
 /**
- * Convert an interval between two monotonic readings (seconds) into a duration
- * (milliseconds). TOTAL: every pair of `number`s maps to a `DurationMillis`.
+ * Convert an interval between two monotonic readings (seconds) into a validated
+ * duration (milliseconds).
  *
- * The clamp is not defensive noise. `MonotonicTimeSecs` promises not to go
- * backwards, but a test clock, a replayed trace or a mis-stamped worker message
- * can hand over a pair in the wrong order — and a negative phase duration would
- * make a slow boot look fast, which is worse than reporting a zero.
+ * `MonotonicTimeSecs` promises not to go backwards, but a test clock, a
+ * replayed trace or a mis-stamped worker message can hand over a pair in the
+ * wrong order. A negative or non-finite duration is invalid because it cannot
+ * be used as a measurement.
  *
- * A NON-FINITE interval reaches the same floor, and for the same reason. Note
- * that this function takes bare `number`s, not `MonotonicTimeSecs`: a NARROWER
+ * This function takes bare `number`s, not `MonotonicTimeSecs`: a NARROWER
  * mirror of the Clock Port satisfies the same Tag at run time with fields
- * reading `undefined`, and `undefined -
- * undefined` is `NaN`. `DurationMillis` is a `Brand.refined` constructor
- * requiring `Number.isFinite(value) && value >= 0`, so before this guard a
- * broken reading THREW — inside `phase()`, inside a `launch` whose signature is
- * `Effect<PlaygroundHandle, never, ...>`. A defect is not in the error channel,
- * and the launch died rather than reporting a number.
- *
- * Zero rather than an invented large duration, because the invented number
- * would be a CLAIM: `classifyBootTimings` would name a specific phase as
- * overrunning by a specific amount and send somebody to optimise work that was
- * never measured. Zero says only what the negative clamp already says — "these
- * two readings are not a measurement" — and a phase reported at 0 ms is the
- * same admission the doc above already accepts as the least-bad answer.
+ * reading `undefined`, and `undefined - undefined` is `NaN`. `DurationMillis`
+ * reports invalid values in a typed result, so a broken reading is propagated
+ * instead of being recorded as a fabricated measurement.
  */
-export const elapsedMillis = (fromSecs: number, toSecs: number): DurationMillis => {
+export const elapsedMillis = (fromSecs: number, toSecs: number): DurationMillisResult => {
   const millis = (toSecs - fromSecs) * MILLIS_PER_SECOND
-  // `Math.max(0, NaN)` is `NaN` and `Math.max(0, Infinity)` is `Infinity`, so
-  // The finiteness test has to come first; clamping alone never removed either.
-  if (!Number.isFinite(millis)) {
-    return DurationMillis(ZERO_DURATION_MILLIS)
-  }
-  return DurationMillis(Math.max(ZERO_DURATION_MILLIS, millis))
+  return DurationMillis(millis)
 }
 
 // ---------------------------------------------------------------------------
@@ -182,17 +194,17 @@ const MODULES_BUDGET_MILLIS = 50
 const FIRST_FRAME_BUDGET_MILLIS = 100
 
 export const BOOT_PHASE_BUDGET_MILLIS: Readonly<Record<BootPhase, DurationMillis>> = {
-  'first-frame': DurationMillis(FIRST_FRAME_BUDGET_MILLIS),
-  input: DurationMillis(INPUT_BUDGET_MILLIS),
-  modules: DurationMillis(MODULES_BUDGET_MILLIS),
-  renderer: DurationMillis(RENDERER_BUDGET_MILLIS),
-  'resolve-options': DurationMillis(RESOLVE_OPTIONS_BUDGET_MILLIS),
-  simulation: DurationMillis(SIMULATION_BUDGET_MILLIS),
-  world: DurationMillis(WORLD_BUDGET_MILLIS),
+  'first-frame': durationMillisFromInvariant(FIRST_FRAME_BUDGET_MILLIS),
+  input: durationMillisFromInvariant(INPUT_BUDGET_MILLIS),
+  modules: durationMillisFromInvariant(MODULES_BUDGET_MILLIS),
+  renderer: durationMillisFromInvariant(RENDERER_BUDGET_MILLIS),
+  'resolve-options': durationMillisFromInvariant(RESOLVE_OPTIONS_BUDGET_MILLIS),
+  simulation: durationMillisFromInvariant(SIMULATION_BUDGET_MILLIS),
+  world: durationMillisFromInvariant(WORLD_BUDGET_MILLIS),
 }
 
 /** The public one-second startup target, represented as a number. */
-export const BOOT_BUDGET_MILLIS: DurationMillis = DurationMillis(MILLIS_PER_SECOND)
+export const BOOT_BUDGET_MILLIS: DurationMillis = durationMillisFromInvariant(MILLIS_PER_SECOND)
 
 // ---------------------------------------------------------------------------
 // Classification
@@ -222,6 +234,63 @@ export type BootBudgetVerdict = {
   readonly overrunPhases: ReadonlyArray<PhaseOverrun>
 }
 
+type BootBudgetResult = ValidationResult<BootBudgetVerdict>
+
+const measureTimings = (timings: ReadonlyArray<PhaseTiming>) => {
+  const measured = new Map<BootPhase, number>()
+  for (const timing of timings) {
+    const durationResult = DurationMillis(timing.durationMillis)
+    if (durationResult._tag === 'Invalid') {
+      return { measured, totalResult: durationResult }
+    }
+    measured.set(timing.phase, (measured.get(timing.phase) ?? ZERO_DURATION_MILLIS) + durationResult.value)
+  }
+  const totalResult = DurationMillis(
+    [...measured.values()].reduce((sum, value) => sum + value, ZERO_DURATION_MILLIS),
+  )
+  return { measured, totalResult }
+}
+
+const phaseOverrunOf = (
+  phase: BootPhase,
+  durationMillis: number,
+  budgetMillis: DurationMillis,
+): PhaseOverrun => ({
+  budgetMillis,
+  durationMillis: durationMillisFromInvariant(durationMillis),
+  overByMillis: durationMillisFromInvariant(durationMillis - budgetMillis),
+  phase,
+})
+
+const phaseOverrunAt = (
+  measured: ReadonlyMap<BootPhase, number>,
+  phase: BootPhase,
+): PhaseOverrun | null => {
+  const budgetMillis = BOOT_PHASE_BUDGET_MILLIS[phase]
+  const durationMillis = measured.get(phase)
+  if (typeof durationMillis === 'undefined' || durationMillis <= budgetMillis) {
+    return null
+  }
+  return phaseOverrunOf(phase, durationMillis, budgetMillis)
+}
+
+const phaseOverrunsOf = (measured: ReadonlyMap<BootPhase, number>): ReadonlyArray<PhaseOverrun> => {
+  const overrunPhases: Array<PhaseOverrun> = []
+  for (const phase of BOOT_PHASE_ORDER) {
+    const overrun = phaseOverrunAt(measured, phase)
+    if (overrun !== null) {
+      overrunPhases.push(overrun)
+    }
+  }
+  return overrunPhases
+}
+
+const classifyMeasuredPhases = (measured: ReadonlyMap<BootPhase, number>) => {
+  const missingPhases = BOOT_PHASE_ORDER.filter((phase) => !measured.has(phase))
+  const overrunPhases = phaseOverrunsOf(measured)
+  return { missingPhases, overrunPhases }
+}
+
 /**
  * Judge a set of measured phase durations against the budget.
  *
@@ -244,40 +313,27 @@ export type BootBudgetVerdict = {
  * cost twice, and hiding a retry inside a first-wins rule would be the same
  * error as ignoring a missing phase, in the other direction.
  */
-export const classifyBootTimings = (timings: ReadonlyArray<PhaseTiming>): BootBudgetVerdict => {
-  const measured = new Map<BootPhase, number>()
-  for (const timing of timings) {
-    measured.set(timing.phase, (measured.get(timing.phase) ?? ZERO_DURATION_MILLIS) + timing.durationMillis)
+export const classifyBootTimings = (timings: ReadonlyArray<PhaseTiming>): BootBudgetResult => {
+  const { measured, totalResult } = measureTimings(timings)
+  if (totalResult._tag === 'Invalid') {
+    return totalResult
   }
 
-  const totalMillis = DurationMillis(
-    [...measured.values()].reduce((sum, value) => sum + value, ZERO_DURATION_MILLIS),
+  const phases = classifyMeasuredPhases(measured)
+
+  const overBudgetMillis = durationMillisFromInvariant(
+    Math.max(ZERO_DURATION_MILLIS, totalResult.value - BOOT_BUDGET_MILLIS),
   )
 
-  const missingPhases = BOOT_PHASE_ORDER.filter((phase) => !measured.has(phase))
-
-  const overrunPhases = BOOT_PHASE_ORDER.flatMap((phase): ReadonlyArray<PhaseOverrun> => {
-    const durationMillis = measured.get(phase)
-    const budgetMillis = BOOT_PHASE_BUDGET_MILLIS[phase]
-    if (typeof durationMillis === 'undefined' || durationMillis <= budgetMillis) {
-      return []
-    }
-    return [
-      {
-        budgetMillis,
-        durationMillis: DurationMillis(durationMillis),
-        overByMillis: DurationMillis(durationMillis - budgetMillis),
-        phase,
-      },
-    ]
-  })
-
   return {
-    missingPhases,
-    overBudgetMillis: DurationMillis(Math.max(ZERO_DURATION_MILLIS, totalMillis - BOOT_BUDGET_MILLIS)),
-    overrunPhases,
-    totalMillis,
-    withinBudget: totalMillis <= BOOT_BUDGET_MILLIS && missingPhases.length === EMPTY_COUNT,
+    _tag: 'Valid',
+    value: {
+      missingPhases: phases.missingPhases,
+      overBudgetMillis,
+      overrunPhases: phases.overrunPhases,
+      totalMillis: totalResult.value,
+      withinBudget: totalResult.value <= BOOT_BUDGET_MILLIS && phases.missingPhases.length === EMPTY_COUNT,
+    },
   }
 }
 

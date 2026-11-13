@@ -1,11 +1,17 @@
 import {
+  type BootBudgetVerdict,
+  type BootPhase,
+  type PhaseTiming,
+  classifyBootTimings,
+  elapsedMillis,
+} from '../domain/boot-phase.js'
+import {
   type BootOutcome,
   type BootPhaseTimer,
   type BootServices,
   type Generation,
 } from './playground-contracts.js'
-import { type BootPhase, classifyBootTimings, elapsedMillis } from '../domain/boot-phase.js'
-import { Cause, Effect, Option, Ref } from 'effect'
+import { Brand, Cause, Effect, Option, Ref } from 'effect'
 import { ClockPort, type DeltaTimeSecs, type StageRegistration } from '@nerima-games/mc-kernel'
 import { FIRST_FRAME_DELTA_SECS, makeGameLoop } from '@nerima-games/mc-sim'
 import {
@@ -29,29 +35,35 @@ const runOneFrame = (
     )
     const pose = yield* services.simulation.cameraPose
     yield* services.renderer.renderFrame(dt, pose)
-  }).pipe(Effect.catchAllCause((cause) => Effect.logError(`Playground frame error: ${Cause.pretty(cause)}`)))
+  }).pipe(
+    Effect.tapErrorCause((cause) => Effect.logError(`Playground frame error: ${Cause.pretty(cause)}`)),
+  )
 
 const timePhase = <A, E>(
   timer: BootPhaseTimer,
   name: BootPhase,
   work: Effect.Effect<A, E>,
-): Effect.Effect<A, E> =>
+): Effect.Effect<A, E | ReturnType<typeof Brand.error>> =>
   Effect.gen(function* timePhaseGen() {
     const startedAt = yield* timer.clock.monotonicSecs
     const result = yield* work
     const finishedAt = yield* timer.clock.monotonicSecs
+    const durationMillis = elapsedMillis(startedAt, finishedAt)
+    if (durationMillis._tag === 'Invalid') {
+      return yield* Effect.fail(durationMillis.error)
+    }
     yield* Ref.update(timer.timingsRef, (recorded) => [
       ...recorded,
-      { durationMillis: elapsedMillis(startedAt, finishedAt), phase: name },
+      { durationMillis: durationMillis.value, phase: name },
     ])
     return result
   })
 
 const bootInfrastructure = (
   services: BootServices,
-  phase: <A, E>(name: BootPhase, work: Effect.Effect<A, E>) => Effect.Effect<A, E>,
+  phase: BootPhaseRunner,
   resolved: ResolvedLaunchOptions,
-): Effect.Effect<void, WorldProviderError> =>
+): Effect.Effect<void, WorldProviderError | ReturnType<typeof Brand.error>> =>
   Effect.gen(function* bootInfrastructureGen() {
     yield* phase('world', services.world.openFlatWorld(resolved.world))
     yield* phase('simulation', services.simulation.spawn(resolved.spawnKit))
@@ -59,20 +71,48 @@ const bootInfrastructure = (
     yield* phase('input', services.input.attach)
   })
 
-export const runBootSequence = (
+const bootBudgetOf = (
+  timings: ReadonlyArray<PhaseTiming>,
+): Effect.Effect<BootBudgetVerdict, ReturnType<typeof Brand.error>> => {
+  const result = classifyBootTimings(timings)
+  if (result._tag === 'Invalid') {
+    return Effect.fail(result.error)
+  }
+  return Effect.succeed(result.value)
+}
+
+type BootPhaseRunner = <A, E>(
+  name: BootPhase,
+  work: Effect.Effect<A, E>,
+) => Effect.Effect<A, E | ReturnType<typeof Brand.error>>
+
+const resolveAndBoot = (
   services: BootServices,
   options: LaunchOptions | undefined,
-): Effect.Effect<BootOutcome, WorldProviderError> =>
-  Effect.gen(function* runBootSequenceGen() {
-    const timingsRef = yield* Ref.make<ReadonlyArray<import('../domain/boot-phase.js').PhaseTiming>>([])
-    const phase = <A, E>(name: BootPhase, work: Effect.Effect<A, E>): Effect.Effect<A, E> =>
-      timePhase({ clock: services.clock, timingsRef }, name, work)
+  phase: BootPhaseRunner,
+): Effect.Effect<{
+  readonly resolved: ResolvedLaunchOptions
+  readonly stages: ReadonlyArray<StageRegistration>
+}, WorldProviderError | ReturnType<typeof Brand.error>> =>
+  Effect.gen(function* resolveAndBootGen() {
     const resolved = yield* phase('resolve-options', Effect.sync(() => normalizeLaunchOptions(options)))
     yield* bootInfrastructure(services, phase, resolved)
     const stages = yield* phase('modules', flattenStages(resolved.modules))
+    return { resolved, stages }
+  })
+
+export const runBootSequence = (
+  services: BootServices,
+  options: LaunchOptions | undefined,
+): Effect.Effect<BootOutcome, WorldProviderError | ReturnType<typeof Brand.error>> =>
+  Effect.gen(function* runBootSequenceGen() {
+    const timingsRef = yield* Ref.make<ReadonlyArray<import('../domain/boot-phase.js').PhaseTiming>>([])
+    const phase: BootPhaseRunner = (name, work) =>
+      timePhase({ clock: services.clock, timingsRef }, name, work)
+    const { resolved, stages } = yield* resolveAndBoot(services, options, phase)
     yield* phase('first-frame', runOneFrame(services, stages, FIRST_FRAME_DELTA_SECS))
     const timings = yield* Ref.get(timingsRef)
-    const budget = classifyBootTimings(timings)
+    const budget = yield* bootBudgetOf(timings)
     const warnings = flattenedStageOrderViolations(stages)
     return { budget, resolved, stages, timings, warnings }
   })
@@ -84,7 +124,11 @@ export const startGeneration = (
 ): Effect.Effect<Generation> =>
   Effect.gen(function* startGenerationGen() {
     const loop = yield* makeGameLoop()
-    yield* loop.start((dt) => runOneFrame(services, stages, dt))
+    yield* loop.start((dt) =>
+      runOneFrame(services, stages, dt).pipe(
+        Effect.tapErrorCause(() => loop.stop),
+      ),
+    )
     const generation: Generation = { loop }
     yield* Ref.set(generationRef, Option.some(generation))
     return generation

@@ -6,6 +6,22 @@ import { emptyBlockWorld, setBlockAt } from '../src/domain/block-interaction'
 import { blockReaderOfChunkWorld, emptyChunkWorld, writeBlockAtChunkWorld } from '../src/domain/chunk-world'
 import { targetBlock } from '../src/domain/block-targeting'
 
+const emptyWorld = () => {
+  const world = emptyChunkWorld(384, -64)
+  if ('_tag' in world) {
+    throw new Error(world.cause.message)
+  }
+  return world
+}
+
+const blockReader = (world: Parameters<typeof blockReaderOfChunkWorld>[0]) => {
+  const reader = blockReaderOfChunkWorld(world)
+  if ('_tag' in reader) {
+    throw new Error(reader.cause.message)
+  }
+  return reader
+}
+
 describe('block targeting', () => {
   it('resolves the first known non-air block and its placement face', () => {
     const world = setBlockAt(
@@ -62,16 +78,19 @@ describe('block targeting', () => {
 
   it('accepts a finite chunk world through its point reader', () => {
     const result = writeBlockAtChunkWorld(
-      emptyChunkWorld(384, -64),
+      emptyWorld(),
       blockPosition(0, 1, -2),
       blockIdOf('dirt'),
     )
 
+    if ('_tag' in result) {
+      throw new Error(result.cause.message)
+    }
     if (result.outcome !== 'updated') {
       throw new Error(`Expected chunk update, got ${result.outcome}`)
     }
 
-    const target = targetBlock(blockReaderOfChunkWorld(result.world), {
+    const target = targetBlock(blockReader(result.world), {
       maxDistance: 6,
       playerPose: INITIAL_PLAYER_POSE,
     })

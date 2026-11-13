@@ -29,7 +29,7 @@
  * `Date.now()` / `new Date()` / `performance.now()` appear nowhere in this app,
  * and the `mc-kernel-allow-time-source` escape hatch is not used.
  */
-import { Effect, Layer, Logger, Option, Ref } from 'effect'
+import { Brand, Effect, Layer, Logger, Option, Ref } from 'effect'
 import {
   Playground,
   PlaygroundLayer,
@@ -251,7 +251,7 @@ export const makeHarness = async (config: HarnessConfig): Promise<Harness> => {
     method: string,
   ): Effect.Effect<void> =>
     record(port, method, scenario.fixture.failingTeardown.includes(port)).pipe(
-      Effect.zipRight(
+      Effect.andThen(
         scenario.fixture.failingTeardown.includes(port)
           ? Effect.sync(() => {
               throw new FixtureFailure(`${port}.${method}`)
@@ -273,11 +273,11 @@ export const makeHarness = async (config: HarnessConfig): Promise<Harness> => {
       wallClockEpochMillis: Effect.succeed(FROZEN_WALL_CLOCK),
     }),
     Layer.succeed(WorldProviderPort, {
-      openFlatWorld: () => chargeMillis(cost('world')).pipe(Effect.zipRight(record('world', 'openFlatWorld', false))),
+      openFlatWorld: () => chargeMillis(cost('world')).pipe(Effect.andThen(record('world', 'openFlatWorld', false))),
       closeWorld: teardownStep('world', 'closeWorld'),
     }),
     Layer.succeed(SimulationPort, {
-      spawn: () => chargeMillis(cost('simulation')).pipe(Effect.zipRight(record('simulation', 'spawn', false))),
+      spawn: () => chargeMillis(cost('simulation')).pipe(Effect.andThen(record('simulation', 'spawn', false))),
       tick: () => record('simulation', 'tick', false),
       cameraPose: Effect.succeed({
         position: position(0, 50, 0),
@@ -288,12 +288,12 @@ export const makeHarness = async (config: HarnessConfig): Promise<Harness> => {
       stop: teardownStep('simulation', 'stop'),
     }),
     Layer.succeed(RendererPort, {
-      attach: chargeMillis(cost('renderer')).pipe(Effect.zipRight(record('renderer', 'attach', false))),
+      attach: chargeMillis(cost('renderer')).pipe(Effect.andThen(record('renderer', 'attach', false))),
       renderFrame: () => record('renderer', 'renderFrame', false),
       detach: teardownStep('renderer', 'detach'),
     }),
     Layer.succeed(InputPort, {
-      attach: chargeMillis(cost('input')).pipe(Effect.zipRight(record('input', 'attach', false))),
+      attach: chargeMillis(cost('input')).pipe(Effect.andThen(record('input', 'attach', false))),
       detach: teardownStep('input', 'detach'),
     }),
     PlaygroundLayer,
@@ -338,7 +338,9 @@ export const makeHarness = async (config: HarnessConfig): Promise<Harness> => {
     })
   }
 
-  const doLaunch = (isRelaunch: boolean): Effect.Effect<void, WorldProviderError> =>
+  const doLaunch = (
+    isRelaunch: boolean,
+  ): Effect.Effect<void, WorldProviderError | ReturnType<typeof Brand.error>> =>
     Effect.gen(function* () {
       // `resolve-options`, `modules` and `first-frame` are charged around the
       // library's own calls rather than inside a Port, because no Port is
@@ -360,7 +362,9 @@ export const makeHarness = async (config: HarnessConfig): Promise<Harness> => {
       )
     }).pipe(Effect.provide(fakes))
 
-  const runCommand = (command: Command): Effect.Effect<void, WorldProviderError> => {
+  const runCommand = (
+    command: Command,
+  ): Effect.Effect<void, WorldProviderError | ReturnType<typeof Brand.error>> => {
     switch (command.kind) {
       case 'launch':
       case 'relaunch':
@@ -378,9 +382,9 @@ export const makeHarness = async (config: HarnessConfig): Promise<Harness> => {
               (at) => (liveHandle as PlaygroundHandle).submitFrame(at),
               { discard: true },
             ).pipe(
-              Effect.zipRight(Effect.yieldNow()),
-              Effect.zipRight(Effect.yieldNow()),
-              Effect.zipRight(
+              Effect.andThen(Effect.yieldNow()),
+              Effect.andThen(Effect.yieldNow()),
+              Effect.andThen(
                 Effect.sync(() => {
                   framesSubmitted += command.count
                   note(`submitted ${String(command.count)} frame(s)`)
@@ -394,7 +398,7 @@ export const makeHarness = async (config: HarnessConfig): Promise<Harness> => {
               note('stop with no live handle')
             })
           : (liveHandle as PlaygroundHandle).stop.pipe(
-              Effect.zipRight(
+              Effect.andThen(
                 Effect.sync(() => {
                   note('handle.stop')
                 }),
@@ -409,8 +413,8 @@ export const makeHarness = async (config: HarnessConfig): Promise<Harness> => {
           : Effect.sync(() => {
               staleTeardownRunning = true
             }).pipe(
-              Effect.zipRight((staleHandle as PlaygroundHandle).stop),
-              Effect.zipRight(
+              Effect.andThen((staleHandle as PlaygroundHandle).stop),
+              Effect.andThen(
                 Effect.sync(() => {
                   staleTeardownRunning = false
                   note(`the superseded handle's stop touched ${String(ghostTeardowns.length)} live port(s)`)

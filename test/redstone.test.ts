@@ -5,6 +5,9 @@ import {
   blockPosition,
   blockPositionKeyOf,
 } from '@nerima-games/mc-kernel'
+import { Schema } from 'effect'
+import * as fc from 'fast-check'
+import assert from 'node:assert/strict'
 import { describe, expect, it } from 'vitest'
 import {
   clearRedstoneInput,
@@ -18,6 +21,7 @@ import {
   redstonePowerAt,
   redstoneObserver,
   redstoneRepeater,
+  repeaterDelayTicks,
   setRedstoneDevice,
   setRedstoneInput,
   updateRedstone,
@@ -28,6 +32,15 @@ import {
   collectRedstoneLayout,
   deviceOutputAtTarget,
 } from '../src/domain/redstone-network'
+
+type Validated<A> =
+  | { readonly _tag: 'Valid'; readonly value: A }
+  | { readonly _tag: 'Invalid'; readonly error: unknown }
+
+const valid = <A>(result: Validated<A>): A => {
+  assert(result._tag === 'Valid')
+  return result.value
+}
 
 const at = (x: number, y = 0, z = 0) => blockPosition(x, y, z)
 
@@ -43,11 +56,11 @@ const place = (
 
 describe('redstone state', () => {
   it('validates signal strength and keeps input state immutable', () => {
-    expect(redstonePower(0)).toBe(0)
-    expect(redstonePower(15)).toBe(15)
-    expect(() => redstonePower(-1)).toThrow()
-    expect(() => redstonePower(16)).toThrow()
-    expect(() => redstonePower(1.5)).toThrow()
+    expect(valid(redstonePower(0))).toBe(0)
+    expect(valid(redstonePower(15))).toBe(15)
+    expect(redstonePower(-1)._tag).toBe('Invalid')
+    expect(redstonePower(16)._tag).toBe('Invalid')
+    expect(redstonePower(1.5)._tag).toBe('Invalid')
 
     const position = at(2)
     const empty = emptyRedstoneState()
@@ -65,7 +78,7 @@ describe('redstone state', () => {
     expect(redstoneInputAt(unpowered, position)).toBe(false)
     expect(redstonePowerAt(unpowered, position)).toBe(0)
 
-    const wirePowers = new Map([[blockPositionKeyOf(position), redstonePower(7)]])
+    const wirePowers = new Map([[blockPositionKeyOf(position), valid(redstonePower(7))]])
     const withWires = withRedstoneWirePowers(unpowered, wirePowers)
     expect(redstonePowerAt(withWires, position)).toBe(7)
     expect(redstoneInputAt(withWires, position)).toBe(false)
@@ -73,7 +86,7 @@ describe('redstone state', () => {
 
   it('keeps device state isolated and clears transient state with the device', () => {
     const position = at(2)
-    const device = redstoneRepeater('east', 2)
+    const device = valid(redstoneRepeater('east', 2))
     const empty = emptyRedstoneState()
     const placed = setRedstoneDevice(empty, position, device)
     expect(redstoneDeviceAt(placed, position)).toEqual(device)
@@ -92,9 +105,9 @@ describe('redstone state', () => {
 
     const key = blockPositionKeyOf(position)
     const stale = withRedstoneDeviceState(placed, {
-      deviceOutputs: new Map([[key, redstonePower(7)]]),
+      deviceOutputs: new Map([[key, valid(redstonePower(7))]]),
       observerSnapshots: new Map([[key, 'stale']]),
-      repeaterTimers: new Map([[key, { power: redstonePower(7), remainingTicks: 2 }]]),
+      repeaterTimers: new Map([[key, { power: valid(redstonePower(7)), remainingTicks: 2 }]]),
     })
     const pruned = updateRedstone(new Map(), stale)
     expect(redstoneDeviceAt(pruned.state, position)).toEqual(device)
@@ -102,27 +115,156 @@ describe('redstone state', () => {
     expect(pruned.state.observerSnapshots.has(key)).toBe(false)
     expect(pruned.state.repeaterTimers.has(key)).toBe(false)
   })
+
+  it('returns typed power failures just outside the legal range', () => {
+    expect(redstonePower(0)._tag).toBe('Valid')
+    expect(redstonePower(15)._tag).toBe('Valid')
+    expect(redstonePower(-1)._tag).toBe('Invalid')
+    expect(redstonePower(16)._tag).toBe('Invalid')
+    expect(redstonePower(0.5)._tag).toBe('Invalid')
+    const invalid = redstonePower(-1)
+    if (invalid._tag === 'Invalid') {
+      expect(invalid.error[0]?.message).toBe(
+        'Redstone power must be an integer between 0 and 15, received -1',
+      )
+    }
+    const invalidObject = redstonePower({ toString: '' })
+    expect(invalidObject._tag).toBe('Invalid')
+    if (invalidObject._tag === 'Invalid') {
+      expect(invalidObject.error[0]?.message).toBe(
+        'Redstone power must be an integer between 0 and 15, received object',
+      )
+    }
+  })
+
+  it('property-checks arbitrary power input and schema-decodes valid output', () => {
+    fc.assert(fc.property(fc.anything(), (input) => {
+      const result = redstonePower(input)
+      const validPower = typeof input === 'number' && Number.isInteger(input) && input >= 0 && input <= 15
+      expect(result._tag).toBe(validPower ? 'Valid' : 'Invalid')
+      if (result._tag === 'Valid') {
+        expect(Schema.decodeUnknownOption(Schema.Number)(result.value)._tag).toBe('Some')
+      }
+    }))
+  })
 })
 
 describe('redstone device definitions', () => {
   it('validates orientation, delay, and comparator mode at construction', () => {
-    expect(redstoneRepeater('north', 4, true)).toEqual({
+    expect(valid(redstoneRepeater('north', 4, true))).toEqual({
       delayTicks: 4,
       facing: 'north',
       kind: 'repeater',
       locked: true,
     })
-    expect(redstoneComparator('south', 'subtract')).toEqual({
+    expect(valid(redstoneComparator('south', 'subtract'))).toEqual({
       facing: 'south',
       kind: 'comparator',
       mode: 'subtract',
     })
-    expect(redstoneObserver('up')).toEqual({ facing: 'up', kind: 'observer' })
-    expect(() => redstoneRepeater('up')).toThrow()
-    expect(() => redstoneRepeater('east', 0)).toThrow()
-    expect(() => redstoneRepeater('east', 5)).toThrow()
-    expect(() => redstoneComparator('east', 'invalid')).toThrow()
-    expect(() => redstoneObserver('diagonal')).toThrow()
+    expect(valid(redstoneObserver('up'))).toEqual({ facing: 'up', kind: 'observer' })
+    expect(redstoneRepeater('up')._tag).toBe('Invalid')
+    expect(redstoneRepeater('east', 0)._tag).toBe('Invalid')
+    expect(redstoneRepeater('east', 5)._tag).toBe('Invalid')
+    expect(redstoneComparator('east', 'invalid')._tag).toBe('Invalid')
+    const invalidFacingComparator = redstoneComparator('up', 'compare')
+    expect(invalidFacingComparator._tag).toBe('Invalid')
+    if (invalidFacingComparator._tag === 'Invalid') {
+      expect(invalidFacingComparator.error[0]?.message).toBe(
+        'Redstone device facing must be horizontal, received up',
+      )
+    }
+    expect(redstoneObserver('diagonal')._tag).toBe('Invalid')
+    const invalidRepeater = redstoneRepeater('up', 0)
+    if (invalidRepeater._tag === 'Invalid') {
+      expect(invalidRepeater.error[0]?.message).toBe(
+        'Repeater delay must be an integer between 1 and 4, received 0',
+      )
+    }
+    const invalidComparator = redstoneComparator('up', 'invalid')
+    if (invalidComparator._tag === 'Invalid') {
+      expect(invalidComparator.error[0]?.message).toBe('Redstone comparator mode is invalid: invalid')
+    }
+  })
+
+  it('returns typed delay failures at and just outside both boundaries', () => {
+    expect(repeaterDelayTicks(1)._tag).toBe('Valid')
+    expect(repeaterDelayTicks(4)._tag).toBe('Valid')
+    expect(repeaterDelayTicks(0)._tag).toBe('Invalid')
+    expect(repeaterDelayTicks(5)._tag).toBe('Invalid')
+    expect(repeaterDelayTicks(1.5)._tag).toBe('Invalid')
+    expect(repeaterDelayTicks(Number.NaN)._tag).toBe('Invalid')
+    expect(repeaterDelayTicks(Number.POSITIVE_INFINITY)._tag).toBe('Invalid')
+    const invalid = repeaterDelayTicks(0)
+    if (invalid._tag === 'Invalid') {
+      expect(invalid.error[0]?.message).toBe(
+        'Repeater delay must be an integer between 1 and 4, received 0',
+      )
+    }
+    const invalidObject = repeaterDelayTicks({ toString: '' })
+    expect(invalidObject._tag).toBe('Invalid')
+    if (invalidObject._tag === 'Invalid') {
+      expect(invalidObject.error[0]?.message).toBe(
+        'Repeater delay must be an integer between 1 and 4, received object',
+      )
+    }
+  })
+
+  it('property-checks repeater delays and schema-decodes valid output', () => {
+    fc.assert(fc.property(fc.anything(), (input) => {
+      const result = repeaterDelayTicks(input)
+      const validDelay = typeof input === 'number' && Number.isInteger(input) && input >= 1 && input <= 4
+      expect(result._tag).toBe(validDelay ? 'Valid' : 'Invalid')
+      if (result._tag === 'Valid') {
+        expect(Schema.decodeUnknownOption(Schema.Number)(result.value)._tag).toBe('Some')
+      }
+    }))
+  })
+
+  it('property-checks redstone device constructors and schema-decodes every valid device', () => {
+    const horizontalFaces = new Set(['north', 'south', 'east', 'west'])
+    const allFaces = new Set(['north', 'south', 'east', 'west', 'up', 'down'])
+    const repeaterSchema = Schema.Struct({
+      delayTicks: Schema.Number,
+      facing: Schema.Literal('north', 'south', 'east', 'west'),
+      kind: Schema.Literal('repeater'),
+      locked: Schema.Boolean,
+    })
+    const comparatorSchema = Schema.Struct({
+      facing: Schema.Literal('north', 'south', 'east', 'west'),
+      kind: Schema.Literal('comparator'),
+      mode: Schema.Literal('compare', 'subtract'),
+    })
+    const observerSchema = Schema.Struct({
+      facing: Schema.Literal('north', 'south', 'east', 'west', 'up', 'down'),
+      kind: Schema.Literal('observer'),
+    })
+
+    fc.assert(fc.property(fc.string(), fc.integer(), fc.boolean(), (facing, delay, locked) => {
+      const result = redstoneRepeater(facing, delay, locked)
+      const accepted = horizontalFaces.has(facing) && delay >= 1 && delay <= 4
+      expect(result._tag).toBe(accepted ? 'Valid' : 'Invalid')
+      if (result._tag === 'Valid') {
+        expect(Schema.decodeUnknownOption(repeaterSchema)(result.value)._tag).toBe('Some')
+      }
+    }))
+
+    fc.assert(fc.property(fc.string(), fc.string(), (facing, mode) => {
+      const result = redstoneComparator(facing, mode)
+      const accepted = horizontalFaces.has(facing) && (mode === 'compare' || mode === 'subtract')
+      expect(result._tag).toBe(accepted ? 'Valid' : 'Invalid')
+      if (result._tag === 'Valid') {
+        expect(Schema.decodeUnknownOption(comparatorSchema)(result.value)._tag).toBe('Some')
+      }
+    }))
+
+    fc.assert(fc.property(fc.string(), (facing) => {
+      const result = redstoneObserver(facing)
+      expect(result._tag).toBe(allFaces.has(facing) ? 'Valid' : 'Invalid')
+      if (result._tag === 'Valid') {
+        expect(Schema.decodeUnknownOption(observerSchema)(result.value)._tag).toBe('Some')
+      }
+    }))
   })
 })
 
@@ -200,7 +342,7 @@ describe('redstone update', () => {
     const state = setRedstoneDevice(
       emptyRedstoneState(),
       comparator,
-      redstoneComparator('east'),
+      valid(redstoneComparator('east')),
     )
 
     const result = updateRedstone(world, state)
@@ -220,7 +362,7 @@ describe('redstone update', () => {
     const state = setRedstoneDevice(
       emptyRedstoneState(),
       comparator,
-      redstoneComparator('east'),
+      valid(redstoneComparator('east')),
     )
     const layout = collectRedstoneLayout(world, state)
 
@@ -361,7 +503,7 @@ describe('redstone update', () => {
     let state = setRedstoneDevice(
       emptyRedstoneState(),
       repeater,
-      redstoneRepeater('east', 2),
+      valid(redstoneRepeater('east', 2)),
     )
     state = setRedstoneInput(state, source, true)
 
@@ -408,7 +550,7 @@ describe('redstone update', () => {
     const state = setRedstoneDevice(
       emptyRedstoneState(),
       repeater,
-      redstoneRepeater('east', 2, true),
+      valid(redstoneRepeater('east', 2, true)),
     )
 
     const result = updateRedstone(world, state)
@@ -428,7 +570,7 @@ describe('redstone update', () => {
     let state = setRedstoneDevice(
       emptyRedstoneState(),
       repeater,
-      redstoneRepeater('east', 2),
+      valid(redstoneRepeater('east', 2)),
     )
     state = setRedstoneInput(state, source, true)
 
@@ -461,7 +603,7 @@ describe('redstone update', () => {
     const compareState = setRedstoneDevice(
       emptyRedstoneState(),
       comparator,
-      redstoneComparator('east'),
+      valid(redstoneComparator('east')),
     )
     const compared = updateRedstone(world, compareState)
     expect(redstoneDevicePowerAt(compared.state, comparator)).toBe(15)
@@ -470,7 +612,7 @@ describe('redstone update', () => {
     const subtractState = setRedstoneDevice(
       compared.state,
       comparator,
-      redstoneComparator('east', 'subtract'),
+      valid(redstoneComparator('east', 'subtract')),
     )
     const subtracted = updateRedstone(world, subtractState)
     expect(redstoneDevicePowerAt(subtracted.state, comparator)).toBe(1)
@@ -491,7 +633,7 @@ describe('redstone update', () => {
     const state = setRedstoneDevice(
       emptyRedstoneState(),
       comparator,
-      redstoneComparator('east'),
+      valid(redstoneComparator('east')),
     )
 
     const result = updateRedstone(world, state)
@@ -512,9 +654,9 @@ describe('redstone update', () => {
     let state = setRedstoneDevice(
       emptyRedstoneState(),
       observer,
-      redstoneObserver('east'),
+      valid(redstoneObserver('east')),
     )
-    state = setRedstoneDevice(state, comparator, redstoneComparator('west'))
+    state = setRedstoneDevice(state, comparator, valid(redstoneComparator('west')))
     state = setRedstoneInput(state, observed, false)
 
     const initial = updateRedstone(world, state)
@@ -549,7 +691,7 @@ describe('redstone update', () => {
     const state = setRedstoneDevice(
       emptyRedstoneState(),
       observer,
-      redstoneObserver('east'),
+      valid(redstoneObserver('east')),
     )
 
     const result = updateRedstone(world, state)

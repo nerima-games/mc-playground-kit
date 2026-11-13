@@ -5,7 +5,7 @@ import {
   type PlaygroundApi,
   type PlaygroundHandle,
 } from './playground-contracts.js'
-import { Cause, Effect, Layer, Option, Ref } from 'effect'
+import { Brand, Cause, Effect, Layer, Option, Ref } from 'effect'
 import {
   InputPort,
   type PlaygroundPorts,
@@ -35,9 +35,11 @@ export const makePlayground: Effect.Effect<PlaygroundApi> = Effect.gen(function*
 
   const bestEffort = (name: string, step: Effect.Effect<void, unknown, never>) =>
     step.pipe(
-      Effect.catchAllCause((cause) =>
-        Effect.logError(`Playground teardown failed for ${name}: ${Cause.pretty(cause)}`),
-      ),
+      Effect.matchCauseEffect({
+        onFailure: (cause) =>
+          Effect.logError(`Playground teardown failed for ${name}: ${Cause.pretty(cause)}`),
+        onSuccess: () => Effect.void,
+      }),
     )
 
   const releaseServices = (services: BootServices) =>
@@ -71,7 +73,7 @@ export const makePlayground: Effect.Effect<PlaygroundApi> = Effect.gen(function*
 
   const launch = (
     options?: LaunchOptions | undefined,
-  ): Effect.Effect<PlaygroundHandle, WorldProviderError, ClockPort | PlaygroundPorts> =>
+  ): Effect.Effect<PlaygroundHandle, WorldProviderError | ReturnType<typeof Brand.error>, ClockPort | PlaygroundPorts> =>
     Effect.gen(function* launchGen() {
       yield* stopCurrent
       const services: BootServices = {
@@ -137,11 +139,11 @@ export const makePlayground: Effect.Effect<PlaygroundApi> = Effect.gen(function*
         return handle
       })
 
-      return yield* boot.pipe(
-        Effect.catchAllCause((cause) =>
-          cleanupFailedLaunch(services).pipe(Effect.zipRight(Effect.failCause(cause))),
-        ),
-      )
+      return yield* Effect.matchCauseEffect(boot, {
+        onFailure: (cause) =>
+          cleanupFailedLaunch(services).pipe(Effect.andThen(Effect.failCause(cause))),
+        onSuccess: Effect.succeed,
+      })
     })
 
   return {
@@ -155,5 +157,5 @@ export const PlaygroundLayer: Layer.Layer<Playground> = Layer.effect(Playground,
 
 export const launchPlayground = (
   options?: LaunchOptions | undefined,
-): Effect.Effect<PlaygroundHandle, WorldProviderError, Playground | ClockPort | PlaygroundPorts> =>
+): Effect.Effect<PlaygroundHandle, WorldProviderError | ReturnType<typeof Brand.error>, Playground | ClockPort | PlaygroundPorts> =>
   Effect.flatMap(Playground, (playground) => playground.launch(options))

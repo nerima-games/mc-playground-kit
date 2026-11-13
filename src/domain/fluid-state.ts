@@ -12,10 +12,35 @@ import { Brand } from 'effect'
 
 export type FluidLevel = number & Brand.Brand<'FluidLevel'>
 
-export const fluidLevel: Brand.Brand.Constructor<FluidLevel> = Brand.refined<FluidLevel>(
-  (value) => Number.isInteger(value) && value >= FLUID_LEVEL_MIN && value <= FLUID_LEVEL_MAX,
-  (value) => Brand.error(`Fluid level must be an integer between ${FLUID_LEVEL_MIN} and ${FLUID_LEVEL_MAX}, received ${value}`),
-)
+type FluidLevelResult =
+  | { readonly _tag: 'Valid'; readonly value: FluidLevel }
+  | { readonly _tag: 'Invalid'; readonly error: ReturnType<typeof Brand.error> }
+
+const fluidLevelBrand = Brand.nominal<FluidLevel>()
+
+const safeValueLabel = (value: unknown): string => {
+  if (value !== null && (typeof value === 'object' || typeof value === 'function')) {
+    return typeof value
+  }
+  return String(value)
+}
+
+const isFluidLevel = (value: unknown): value is FluidLevel =>
+  typeof value === 'number' &&
+  Number.isInteger(value) &&
+  value >= FLUID_LEVEL_MIN &&
+  value <= FLUID_LEVEL_MAX
+
+export const fluidLevel = (value: unknown): FluidLevelResult => {
+  if (!isFluidLevel(value)) {
+    return {
+      _tag: 'Invalid',
+      error: Brand.error(`Fluid level must be an integer between ${FLUID_LEVEL_MIN} and ${FLUID_LEVEL_MAX}, received ${safeValueLabel(value)}`),
+    }
+  }
+
+  return { _tag: 'Valid', value: fluidLevelBrand(value) }
+}
 
 export type FluidCell = {
   readonly falling: boolean

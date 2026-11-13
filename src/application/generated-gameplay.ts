@@ -1,4 +1,4 @@
-import { Cause, Data, Effect, Option, Ref } from 'effect'
+import { Brand, Cause, Data, Effect, Option, Ref } from 'effect'
 import { ClockPort, type ClockService } from '@nerima-games/mc-kernel'
 import {
   type CropService,
@@ -75,6 +75,7 @@ export class GeneratedGameplayWorldUnavailableError extends GeneratedGameplayWor
 export type GeneratedGameplayError =
   | GeneratedGameplayWorldUnavailableError
   | InvalidSpawnKitError
+  | ReturnType<typeof Brand.error>
   | WorldProviderError
   | WorldRuntimePersistenceError
   | WorldRuntimeSnapshotError
@@ -103,6 +104,9 @@ const messageOf = (cause: unknown): string => {
   if (cause instanceof Error) {
     return cause.message
   }
+  if ((typeof cause === 'object' && cause !== null) || typeof cause === 'function') {
+    return '[object Object]'
+  }
   return String(cause)
 }
 
@@ -111,42 +115,76 @@ const invalidSpawnKitError = (slotIndex: number, cause: unknown): InvalidSpawnKi
 
 const UNKNOWN_SLOT_INDEX = -1
 const NO_LEFTOVER_ITEMS = 0
+const FIRST_SLOT_INDEX = 0
+const SLOT_INDEX_STEP = 1
 
-const spawnKitErrorOf = (cause: unknown): InvalidSpawnKitError => {
-  if (cause instanceof InvalidSpawnKitError) {
-    return cause
-  }
-  return invalidSpawnKitError(UNKNOWN_SLOT_INDEX, cause)
-}
+const inventorySlotOf = (
+  hotbar: ReadonlyArray<HotbarSlot>,
+  slotIndex: number,
+): Effect.Effect<ReturnType<typeof itemStack>, InvalidSpawnKitError> =>
+  Effect.flatMap(
+    Effect.try({
+      catch: (cause) => invalidSpawnKitError(slotIndex, cause),
+      try: () => hotbar[slotIndex],
+    }),
+    (slot) => Option.match(Option.fromNullable(slot), {
+      onNone: () => Effect.fail(
+        invalidSpawnKitError(slotIndex, new TypeError('spawn kit hotbar slot is undefined')),
+      ),
+      onSome: (value) => Effect.try({
+        catch: (cause) => invalidSpawnKitError(slotIndex, cause),
+        try: () => itemStack(value.item, value.count),
+      }),
+    }),
+  )
 
-const inventorySlotOf = (slot: HotbarSlot, slotIndex: number) => {
-  try {
-    return itemStack(slot.item, slot.count)
-  } catch (cause) {
-    throw invalidSpawnKitError(slotIndex, cause)
+const inventorySlotsOfHotbar = (
+  hotbar: ReadonlyArray<HotbarSlot>,
+): Effect.Effect<Inventory, InvalidSpawnKitError> => Effect.gen(function* inventorySlotsOfHotbarGen() {
+  const hotbarLength = yield* Effect.try({
+    catch: (cause) => invalidSpawnKitError(UNKNOWN_SLOT_INDEX, cause),
+    try: () => hotbar.length,
+  })
+  if (hotbarLength > INVENTORY_SLOT_COUNT) {
+    return yield* Effect.fail(new InvalidSpawnKitError({
+      message: `hotbar has ${String(hotbarLength)} slots but inventory has ${String(INVENTORY_SLOT_COUNT)}`,
+      slotIndex: INVENTORY_SLOT_COUNT,
+    }))
   }
-}
+
+  const slots = [...emptyInventory().slots]
+  for (let slotIndex = FIRST_SLOT_INDEX; slotIndex < hotbarLength; slotIndex += SLOT_INDEX_STEP) {
+    const hasSlot = yield* Effect.try({
+      catch: (cause) => invalidSpawnKitError(slotIndex, cause),
+      try: () => slotIndex in hotbar,
+    })
+    if (hasSlot) {
+      slots[slotIndex] = yield* inventorySlotOf(hotbar, slotIndex)
+    }
+  }
+  return { slots }
+})
 
 export const inventoryOfSpawnKit = (
   kit: SpawnKit,
-): Effect.Effect<Inventory, InvalidSpawnKitError> =>
-  Effect.try({
-    catch: (cause) => spawnKitErrorOf(cause),
+): Effect.Effect<Inventory, InvalidSpawnKitError> => Effect.gen(function* inventoryOfSpawnKitGen() {
+  const hotbarInspection = yield* Effect.try({
+    catch: (cause) => invalidSpawnKitError(UNKNOWN_SLOT_INDEX, cause),
     try: () => {
-      if (kit.hotbar.length > INVENTORY_SLOT_COUNT) {
-        throw new InvalidSpawnKitError({
-          message: `hotbar has ${String(kit.hotbar.length)} slots but inventory has ${String(INVENTORY_SLOT_COUNT)}`,
-          slotIndex: INVENTORY_SLOT_COUNT,
-        })
+      const hotbar = kit?.hotbar
+      if (Array.isArray(hotbar)) {
+        return { _tag: 'Valid' as const, hotbar }
       }
-
-      const slots = [...emptyInventory().slots]
-      kit.hotbar.forEach((slot, slotIndex) => {
-        slots[slotIndex] = inventorySlotOf(slot, slotIndex)
-      })
-      return { slots }
+      return { _tag: 'Invalid' as const }
     },
   })
+  if (hotbarInspection._tag === 'Invalid') {
+    return yield* Effect.fail(
+      invalidSpawnKitError(UNKNOWN_SLOT_INDEX, new TypeError('spawn kit hotbar must be an array')),
+    )
+  }
+  return yield* inventorySlotsOfHotbar(hotbarInspection.hotbar)
+})
 
 const restoreInventory = (
   inventory: InventoryServiceApi,
@@ -198,7 +236,11 @@ export const makeGeneratedSimulation = ({
     yield* inventory.reset
     yield* closeWorldSync
   }),
-  tick: () => syncWorld.pipe(Effect.catchAllCause((cause) => Effect.die(cause))),
+  tick: () =>
+    Effect.matchCauseEffect(syncWorld, {
+      onFailure: (cause) => Effect.die(cause),
+      onSuccess: () => Effect.void,
+    }),
 })
 
 const generatedHandleOf = (
@@ -298,12 +340,12 @@ export const launchGeneratedPlayground = (
       return generatedHandleOf(handle, preview, persistWorld)
     })
 
-    return yield* launch.pipe(
-      Effect.catchAllCause((cause) =>
-        worldProvider.closeWorld.pipe(
-          Effect.catchAllCause(() => Effect.void),
-          Effect.zipRight(Effect.failCause(cause)),
-        ),
-      ),
-    )
+    return yield* Effect.matchCauseEffect(launch, {
+      onFailure: (cause) =>
+        Effect.matchCauseEffect(worldProvider.closeWorld, {
+          onFailure: () => Effect.void,
+          onSuccess: () => Effect.void,
+        }).pipe(Effect.andThen(Effect.failCause(cause))),
+      onSuccess: Effect.succeed,
+    })
   })

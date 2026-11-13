@@ -1,4 +1,4 @@
-import { Effect, Ref } from 'effect'
+import { Brand, Effect, Ref } from 'effect'
 import {
   type StageId,
   type StageRegistration,
@@ -25,10 +25,14 @@ export const makeWorldMechanicsPreview = (
   options: WorldMechanicsStageOptions = {
     id: DEFAULT_WORLD_MECHANICS_STAGE_ID,
   },
-): Effect.Effect<WorldMechanicsPreview> =>
+): Effect.Effect<WorldMechanicsPreview, ReturnType<typeof Brand.error>> =>
   Effect.gen(function* makeWorldMechanicsPreviewGen() {
     const state = yield* Ref.make(worldMechanicsStateFromWorld(world))
-    const stage = makeWorldMechanicsStage(state, options)
+    const stageResult = makeWorldMechanicsStage(state, options)
+    if (stageResult._tag === 'Invalid') {
+      return yield* Effect.fail(stageResult.error)
+    }
+    const stage = stageResult.value
     const frameStages: ReadonlyArray<StageRegistration> = [stage]
 
     return {

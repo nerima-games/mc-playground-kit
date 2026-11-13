@@ -5,15 +5,16 @@ import {
 } from '@nerima-games/mc-worldgen'
 import {
   type ChunkWorld,
-  blockWorldOfChunkWorld,
+  blockWorldOfChunkWorldEffect,
   removeChunkFromChunkWorld,
   storeChunkInChunkWorld,
 } from '../domain/chunk-world.js'
 import { Effect, Ref } from 'effect'
 import {
-  type WorldRuntimeSnapshotError,
+  WorldRuntimeSnapshotError,
   snapshotChunk,
   snapshotWorldRuntime,
+  worldRuntimeSnapshotErrorFromChunkWorldFailure,
 } from './world-runtime-snapshot.js'
 import { type BlockWorld } from '../domain/block-world.js'
 import { chunkKeyOf } from '@nerima-games/mc-kernel'
@@ -33,6 +34,11 @@ type RefreshWorldContext = {
   readonly store: ChunkStoreApi
   readonly subscription: ChunkDirtySubscription
 }
+
+const blockWorldFromChunkWorld = (
+  world: ChunkWorld,
+): Effect.Effect<BlockWorld, WorldRuntimeSnapshotError> =>
+  Effect.mapError(blockWorldOfChunkWorldEffect(world), worldRuntimeSnapshotErrorFromChunkWorldFailure)
 
 const applyDirtyBatch = (
   context: RefreshWorldContext,
@@ -64,8 +70,9 @@ const refreshWorld = (
     }
 
     const nextWorld = yield* applyDirtyBatch(context, batch)
+    const nextBlockWorld = yield* blockWorldFromChunkWorld(nextWorld)
     yield* Ref.set(context.chunkWorld, nextWorld)
-    yield* Ref.set(context.blockWorld, blockWorldOfChunkWorld(nextWorld))
+    yield* Ref.set(context.blockWorld, nextBlockWorld)
     return true
   })
 
@@ -75,8 +82,9 @@ export const makeChunkStoreWorldSync = (
   Effect.flatMap(store.subscribeDirty, (subscription) =>
     Effect.gen(function* makeChunkStoreWorldSyncGen() {
       const initialWorld = yield* snapshotWorldRuntime(store)
+      const initialBlockWorld = yield* blockWorldFromChunkWorld(initialWorld)
       const chunkWorld = yield* Ref.make(initialWorld)
-      const blockWorld = yield* Ref.make(blockWorldOfChunkWorld(initialWorld))
+      const blockWorld = yield* Ref.make(initialBlockWorld)
       const refreshMutex = yield* Effect.makeSemaphore(REFRESH_PERMITS)
       const refresh = refreshMutex.withPermits(REFRESH_PERMITS)(
         refreshWorld({
@@ -93,8 +101,10 @@ export const makeChunkStoreWorldSync = (
         refresh,
       }
     }).pipe(
-      Effect.catchAllCause((cause) =>
-        subscription.unsubscribe.pipe(Effect.zipRight(Effect.failCause(cause))),
-      ),
+      Effect.matchCauseEffect({
+        onFailure: (cause) =>
+          subscription.unsubscribe.pipe(Effect.andThen(Effect.failCause(cause))),
+        onSuccess: Effect.succeed,
+      }),
     ),
   )
