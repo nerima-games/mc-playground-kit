@@ -36,33 +36,34 @@ const runOneFrame = (
     const pose = yield* services.simulation.cameraPose
     yield* services.renderer.renderFrame(dt, pose)
   }).pipe(
-    Effect.matchCauseEffect({
-      onFailure: (cause) => Effect.logError(`Playground frame error: ${Cause.pretty(cause)}`),
-      onSuccess: () => Effect.void,
-    }),
+    Effect.tapErrorCause((cause) => Effect.logError(`Playground frame error: ${Cause.pretty(cause)}`)),
   )
 
 const timePhase = <A, E>(
   timer: BootPhaseTimer,
   name: BootPhase,
   work: Effect.Effect<A, E>,
-): Effect.Effect<A, E> =>
+): Effect.Effect<A, E | ReturnType<typeof Brand.error>> =>
   Effect.gen(function* timePhaseGen() {
     const startedAt = yield* timer.clock.monotonicSecs
     const result = yield* work
     const finishedAt = yield* timer.clock.monotonicSecs
+    const durationMillis = elapsedMillis(startedAt, finishedAt)
+    if (durationMillis._tag === 'Invalid') {
+      return yield* Effect.fail(durationMillis.error)
+    }
     yield* Ref.update(timer.timingsRef, (recorded) => [
       ...recorded,
-      { durationMillis: elapsedMillis(startedAt, finishedAt), phase: name },
+      { durationMillis: durationMillis.value, phase: name },
     ])
     return result
   })
 
 const bootInfrastructure = (
   services: BootServices,
-  phase: <A, E>(name: BootPhase, work: Effect.Effect<A, E>) => Effect.Effect<A, E>,
+  phase: BootPhaseRunner,
   resolved: ResolvedLaunchOptions,
-): Effect.Effect<void, WorldProviderError> =>
+): Effect.Effect<void, WorldProviderError | ReturnType<typeof Brand.error>> =>
   Effect.gen(function* bootInfrastructureGen() {
     yield* phase('world', services.world.openFlatWorld(resolved.world))
     yield* phase('simulation', services.simulation.spawn(resolved.spawnKit))
@@ -83,7 +84,7 @@ const bootBudgetOf = (
 type BootPhaseRunner = <A, E>(
   name: BootPhase,
   work: Effect.Effect<A, E>,
-) => Effect.Effect<A, E>
+) => Effect.Effect<A, E | ReturnType<typeof Brand.error>>
 
 const resolveAndBoot = (
   services: BootServices,
@@ -123,7 +124,11 @@ export const startGeneration = (
 ): Effect.Effect<Generation> =>
   Effect.gen(function* startGenerationGen() {
     const loop = yield* makeGameLoop()
-    yield* loop.start((dt) => runOneFrame(services, stages, dt))
+    yield* loop.start((dt) =>
+      runOneFrame(services, stages, dt).pipe(
+        Effect.tapErrorCause(() => loop.stop),
+      ),
+    )
     const generation: Generation = { loop }
     yield* Ref.set(generationRef, Option.some(generation))
     return generation

@@ -43,7 +43,7 @@ import { Brand } from 'effect'
 // Duration
 // ---------------------------------------------------------------------------
 
-/** The floor (and the finite-conversion fallback) for every `DurationMillis`: durations do not go negative. */
+/** Additive identity for boot timing arithmetic. */
 const ZERO_DURATION_MILLIS = 0
 /** Conversion factor between `MonotonicTimeSecs`'s seconds and `DurationMillis`'s milliseconds. */
 const MILLIS_PER_SECOND = 1000
@@ -94,42 +94,28 @@ export const DurationMillis = (value: unknown): DurationMillisResult => {
   return { _tag: 'Valid', value: durationMillisBrand(value) }
 }
 
-// Internal duration values come from fixed non-negative budgets or from the
-// Bounded conversion below. untrusted numbers go through `DurationMillis`.
+// Internal duration values come from fixed non-negative budgets. Untrusted
+// Numbers go through `DurationMillis`.
 const durationMillisFromInvariant = (value: number): DurationMillis => durationMillisBrand(value)
 
 /**
- * Convert an interval between two monotonic readings (seconds) into a duration
- * (milliseconds). TOTAL: every pair of `number`s maps to a `DurationMillis`.
+ * Convert an interval between two monotonic readings (seconds) into a validated
+ * duration (milliseconds).
  *
- * The clamp is not defensive noise. `MonotonicTimeSecs` promises not to go
- * backwards, but a test clock, a replayed trace or a mis-stamped worker message
- * can hand over a pair in the wrong order — and a negative phase duration would
- * make a slow boot look fast, which is worse than reporting a zero.
+ * `MonotonicTimeSecs` promises not to go backwards, but a test clock, a
+ * replayed trace or a mis-stamped worker message can hand over a pair in the
+ * wrong order. A negative or non-finite duration is invalid because it cannot
+ * be used as a measurement.
  *
- * A NON-FINITE interval reaches the same floor, and for the same reason. Note
- * that this function takes bare `number`s, not `MonotonicTimeSecs`: a NARROWER
+ * This function takes bare `number`s, not `MonotonicTimeSecs`: a NARROWER
  * mirror of the Clock Port satisfies the same Tag at run time with fields
  * reading `undefined`, and `undefined - undefined` is `NaN`. `DurationMillis`
- * reports invalid values in a typed result, so this conversion checks
- * finiteness first and maps a broken reading to zero rather than recording a
- * fabricated measurement.
- *
- * Zero rather than an invented large duration, because the invented number
- * would be a CLAIM: `classifyBootTimings` would name a specific phase as
- * overrunning by a specific amount and send somebody to optimise work that was
- * never measured. Zero says only what the negative clamp already says — "these
- * two readings are not a measurement" — and a phase reported at 0 ms is the
- * same admission the doc above already accepts as the least-bad answer.
+ * reports invalid values in a typed result, so a broken reading is propagated
+ * instead of being recorded as a fabricated measurement.
  */
-export const elapsedMillis = (fromSecs: number, toSecs: number): DurationMillis => {
+export const elapsedMillis = (fromSecs: number, toSecs: number): DurationMillisResult => {
   const millis = (toSecs - fromSecs) * MILLIS_PER_SECOND
-  // `Math.max(0, NaN)` is `NaN` and `Math.max(0, Infinity)` is `Infinity`, so
-  // The finiteness test has to come first; clamping alone never removed either.
-  if (!Number.isFinite(millis)) {
-    return durationMillisFromInvariant(ZERO_DURATION_MILLIS)
-  }
-  return durationMillisFromInvariant(Math.max(ZERO_DURATION_MILLIS, millis))
+  return DurationMillis(millis)
 }
 
 // ---------------------------------------------------------------------------
@@ -229,6 +215,11 @@ export type PhaseTiming = {
   readonly durationMillis: DurationMillis
 }
 
+export type PhaseTimingInput = {
+  readonly phase: BootPhase
+  readonly durationMillis: number
+}
+
 export type PhaseOverrun = {
   readonly phase: BootPhase
   readonly durationMillis: DurationMillis
@@ -250,10 +241,14 @@ export type BootBudgetVerdict = {
 
 type BootBudgetResult = ValidationResult<BootBudgetVerdict>
 
-const measureTimings = (timings: ReadonlyArray<PhaseTiming>) => {
+const measureTimings = (timings: ReadonlyArray<PhaseTimingInput>) => {
   const measured = new Map<BootPhase, number>()
   for (const timing of timings) {
-    measured.set(timing.phase, (measured.get(timing.phase) ?? ZERO_DURATION_MILLIS) + timing.durationMillis)
+    const durationResult = DurationMillis(timing.durationMillis)
+    if (durationResult._tag === 'Invalid') {
+      return { measured, totalResult: durationResult }
+    }
+    measured.set(timing.phase, (measured.get(timing.phase) ?? ZERO_DURATION_MILLIS) + durationResult.value)
   }
   const totalResult = DurationMillis(
     [...measured.values()].reduce((sum, value) => sum + value, ZERO_DURATION_MILLIS),
@@ -323,7 +318,7 @@ const classifyMeasuredPhases = (measured: ReadonlyMap<BootPhase, number>) => {
  * cost twice, and hiding a retry inside a first-wins rule would be the same
  * error as ignoring a missing phase, in the other direction.
  */
-export const classifyBootTimings = (timings: ReadonlyArray<PhaseTiming>): BootBudgetResult => {
+export const classifyBootTimings = (timings: ReadonlyArray<PhaseTimingInput>): BootBudgetResult => {
   const { measured, totalResult } = measureTimings(timings)
   if (totalResult._tag === 'Invalid') {
     return totalResult

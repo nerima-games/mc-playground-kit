@@ -24,6 +24,7 @@ import {
   elapsedMillis,
   type BootPhase,
   type PhaseTiming,
+  type PhaseTimingInput,
 } from '../src/domain/boot-phase'
 
 const durationValue = (value: number) => {
@@ -35,6 +36,11 @@ const durationValue = (value: number) => {
 const timing = (phase: BootPhase, durationMillis: number): PhaseTiming => ({
   phase,
   durationMillis: durationValue(durationMillis),
+})
+
+const unvalidatedTiming = (phase: BootPhase, durationMillis: number): PhaseTimingInput => ({
+  phase,
+  durationMillis,
 })
 
 const verdictOf = (timings: ReadonlyArray<PhaseTiming>) => {
@@ -126,41 +132,37 @@ describe('the budget itself', () => {
 describe('elapsedMillis', () => {
   it.effect('converts an interval in seconds to a duration in milliseconds', () =>
     Effect.sync(() => {
-      expect(elapsedMillis(10, 10.25)).toBe(250)
-      expect(elapsedMillis(0, 1)).toBe(1000)
-      expect(elapsedMillis(5, 5)).toBe(0)
+      expect(elapsedMillis(10, 10.25)).toStrictEqual({ _tag: 'Valid', value: 250 })
+      expect(elapsedMillis(0, 1)).toStrictEqual({ _tag: 'Valid', value: 1000 })
+      expect(elapsedMillis(5, 5)).toStrictEqual({ _tag: 'Valid', value: 0 })
     }),
   )
 
-  it.effect('clamps a backwards interval to zero rather than reporting a negative boot', () =>
+  it.effect('returns a typed failure for a backwards interval', () =>
     Effect.sync(() => {
-      // MonotonicTimeSecs promises not to go backwards, but a test clock, a
-      // replayed trace or a mis-stamped worker message can hand over a pair in
-      // the wrong order. A negative duration makes a slow boot look fast, which
-      // is worse than reporting zero.
-      expect(elapsedMillis(10, 9)).toBe(0)
+      const result = elapsedMillis(10, 9)
+      expect(result._tag).toBe('Invalid')
+      if (result._tag === 'Invalid') {
+        expect(result.error[0]?.message).toBe(
+          'DurationMillis must be a finite, non-negative number of milliseconds, received -1000',
+        )
+      }
     }),
   )
 
-  it.effect('REGRESSION: a non-finite reading is a zero, not a defect that kills the launch', () =>
+  it.effect('returns a typed failure for non-finite clock readings', () =>
     Effect.sync(() => {
       // `elapsedMillis` takes bare `number`s, not `MonotonicTimeSecs`, and
-      // The published kernel ClockPort contract documents that a narrower mirror
-      // of the Clock Port satisfies the same Tag at run time with fields
-      // reading `undefined` — and `undefined - undefined` is NaN. Since
-      // `DurationMillis` reports invalid values in a typed result. This
-      // conversion maps broken clock readings to zero before constructing a
-      // duration, so the phase still records a value.
-      expect(elapsedMillis(0, Number.NaN)).toBe(0)
-      expect(elapsedMillis(Number.NaN, 0)).toBe(0)
-      expect(elapsedMillis(0, Number.POSITIVE_INFINITY)).toBe(0)
-      expect(elapsedMillis(Number.NEGATIVE_INFINITY, 0)).toBe(0)
-      expect(elapsedMillis(Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY)).toBe(0)
-
-      // Zero and not an invented large duration: a fabricated number would make
-      // `classifyBootTimings` name a specific phase as overrunning by a
-      // specific amount, sending somebody to optimise work that was never
-      // measured. Zero says only what the backwards clamp above already says.
+      // an invalid runtime clock can still provide non-finite values.
+      for (const [from, to] of [
+        [0, Number.NaN],
+        [Number.NaN, 0],
+        [0, Number.POSITIVE_INFINITY],
+        [Number.NEGATIVE_INFINITY, 0],
+        [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY],
+      ] as const) {
+        expect(elapsedMillis(from, to)._tag).toBe('Invalid')
+      }
     }),
   )
 })
@@ -218,6 +220,19 @@ describe('classifyBootTimings', () => {
         expect(result.error[0]?.message).toBe(
           'DurationMillis must be a finite, non-negative number of milliseconds, received Infinity',
         )
+      }
+    }),
+  )
+
+  it.effect('rejects each invalid duration before it can cancel another phase', () =>
+    Effect.sync(() => {
+      for (const invalid of [-1000, Number.NaN, Number.POSITIVE_INFINITY]) {
+        const result = classifyBootTimings([
+          unvalidatedTiming('world', 2000),
+          unvalidatedTiming('renderer', invalid),
+        ])
+
+        expect(result._tag).toBe('Invalid')
       }
     }),
   )
@@ -403,14 +418,25 @@ describe('DurationMillis', () => {
     }),
   )
 
-  it.effect('validates arbitrary numeric inputs without throwing and schema-decodes every valid output', () =>
+  it.effect('validates generated valid and invalid inputs without changing valid values', () =>
     Effect.sync(() => {
-      fc.assert(fc.property(fc.anything(), (input) => {
+      const validInputs = fc.double({ min: 0, max: 1_000_000 }).map((input) => ({
+        expected: 'Valid' as const,
+        input,
+      }))
+      const invalidInputs = fc.oneof(
+        fc.double({ min: -1_000_000, max: -Number.MIN_VALUE }),
+        fc.constantFrom<unknown>(Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, null, '1', {}, true),
+      ).map((input) => ({
+        expected: 'Invalid' as const,
+        input,
+      }))
+
+      fc.assert(fc.property(fc.oneof(validInputs, invalidInputs), ({ expected, input }) => {
         const result = DurationMillis(input)
-        const valid = typeof input === 'number' && Number.isFinite(input) && input >= 0
-        expect(result._tag).toBe(valid ? 'Valid' : 'Invalid')
-        if (result._tag === 'Valid') {
-          expect(Schema.decodeUnknownOption(Schema.Number)(result.value)._tag).toBe('Some')
+        expect(result._tag).toBe(expected)
+        if (expected === 'Valid' && result._tag === 'Valid') {
+          expect(result.value).toBe(input)
         }
       }))
     }),

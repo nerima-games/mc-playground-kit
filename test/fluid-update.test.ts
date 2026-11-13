@@ -6,7 +6,6 @@ import {
   blockPosition,
   blockPositionKeyOf,
 } from '@nerima-games/mc-kernel'
-import { Schema } from 'effect'
 import * as fc from 'fast-check'
 import assert from 'node:assert/strict'
 import { describe, expect, it } from 'vitest'
@@ -139,18 +138,30 @@ describe('fluid data and state', () => {
     }
   })
 
-  it('property-checks arbitrary inputs and schema-decodes every valid level', () => {
-    fc.assert(fc.property(fc.anything(), (input) => {
-      const result = fluidLevel(input)
-      const valid =
-        typeof input === 'number' &&
-        Number.isInteger(input) &&
-        input >= FLUID_LEVEL_MIN &&
-        input <= FLUID_LEVEL_MAX
-      expect(result._tag).toBe(valid ? 'Valid' : 'Invalid')
-      if (result._tag === 'Valid') {
-        expect(Schema.decodeUnknownOption(Schema.Number)(result.value)._tag).toBe('Some')
-      }
+  it('property-checks levels drawn from the valid range and preserves their values', () => {
+    fc.assert(fc.property(
+      fc.integer({ min: FLUID_LEVEL_MIN, max: FLUID_LEVEL_MAX }),
+      (input) => {
+        const result = fluidLevel(input)
+        if (result._tag === 'Valid') {
+          expect(result.value).toBe(input)
+        } else {
+          assert.fail('a level drawn from the supported integer range must be valid')
+        }
+      },
+    ))
+  })
+
+  it('property-checks levels drawn outside the supported values', () => {
+    const invalidLevels = fc.oneof(
+      fc.integer({ max: FLUID_LEVEL_MIN - 1 }),
+      fc.integer({ min: FLUID_LEVEL_MAX + 1 }),
+      fc.integer({ min: FLUID_LEVEL_MIN, max: FLUID_LEVEL_MAX }).map((level) => level + 0.5),
+      fc.constantFrom(Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, null, 'water', {}),
+    )
+
+    fc.assert(fc.property(invalidLevels, (input) => {
+      expect(fluidLevel(input)._tag).toBe('Invalid')
     }))
   })
 

@@ -177,6 +177,46 @@ describe('boot', () => {
     }),
   )
 
+  it.effect('fails the boot Effect when the clock interval overflows milliseconds', () =>
+    Effect.gen(function* () {
+      const clockReads = yield* Ref.make(0)
+      const clock: ClockService = {
+        monotonicSecs: Ref.getAndUpdate(clockReads, (read) => read + 1).pipe(
+          Effect.map((read) => MonotonicTimeSecs(read % 2 === 0 ? 0 : 1e306)),
+        ),
+        wallClockEpochMillis: Effect.succeed(EpochMillis(0)),
+      }
+      const services: BootServices = {
+        clock,
+        input: { attach: Effect.void, detach: Effect.void },
+        renderer: {
+          attach: Effect.void,
+          detach: Effect.void,
+          renderFrame: () => Effect.void,
+        },
+        simulation: {
+          spawn: () => Effect.void,
+          tick: () => Effect.void,
+          cameraPose: Effect.succeed(POSE),
+          stop: Effect.void,
+        },
+        world: { openFlatWorld: () => Effect.void, closeWorld: Effect.void },
+      }
+      const result = yield* Effect.match(runBootSequence(services, undefined), {
+        onFailure: (error) => ({ _tag: 'Failure' as const, error }),
+        onSuccess: (value) => ({ _tag: 'Success' as const, value }),
+      })
+
+      expect(result._tag).toBe('Failure')
+      if (result._tag === 'Failure') {
+        expect(Array.isArray(result.error)).toBe(true)
+        if (Array.isArray(result.error)) {
+          expect(result.error[0]?.message).toContain('finite')
+        }
+      }
+    }),
+  )
+
   it.effect('launchPlayground() with no arguments produces a live preview', () =>
     Effect.gen(function* () {
       const fakes = yield* makeFakes()
@@ -253,6 +293,40 @@ describe('boot', () => {
       expect(yield* probe.seen).toStrictEqual([0.016])
 
       yield* handle.stop
+    }).pipe(Effect.provide(PlaygroundLayer)),
+  )
+
+  it.effect('fails launch and releases resources when the first frame fails', () =>
+    Effect.gen(function* () {
+      const fakes = yield* makeFakes()
+      const calls = yield* Ref.make(0)
+      const playground = yield* Playground
+      const firstFrameFailure: PreviewModule = {
+        frameStages: Effect.succeed([{
+          id: StageId('preview:first-frame-fails'),
+          run: () => Ref.updateAndGet(calls, (count) => count + 1).pipe(
+            Effect.andThen(Effect.die('first frame failed')),
+          ),
+        }]),
+      }
+
+      const result = yield* Effect.exit(
+        launchPlayground({ modules: [firstFrameFailure] }).pipe(Effect.provide(fakes.layer)),
+      )
+
+      expect(result._tag).toBe('Failure')
+      expect(yield* Ref.get(calls)).toBe(1)
+      expect(Option.isNone(yield* playground.current)).toBe(true)
+      expect(yield* fakes.events).toStrictEqual([
+        'world.open:playground',
+        'sim.spawn:y=50',
+        'renderer.attach',
+        'input.attach',
+        'input.detach',
+        'renderer.detach',
+        'sim.stop',
+        'world.close',
+      ])
     }).pipe(Effect.provide(PlaygroundLayer)),
   )
 
@@ -372,40 +446,40 @@ describe('frames', () => {
     }).pipe(Effect.provide(PlaygroundLayer)),
   )
 
-  it.effect('a stage DEFECT is logged and the pump keeps running', () =>
+  it.effect('stops the frame loop after a stage defect', () =>
     Effect.gen(function* () {
-      // catchAllCause, not catchAll: a thrown exception is a Cause.Die that
-      // catchAll would let through, killing the pump on the first bad frame. A
-      // preview whose window goes black on frame one teaches nothing.
       const fakes = yield* makeFakes()
       const calls = yield* Ref.make(0)
-      const reached = yield* Deferred.make<void>()
+      const failed = yield* Deferred.make<void>()
 
       const exploding: PreviewModule = {
         frameStages: Effect.succeed([
           {
             id: StageId('preview:explodes'),
-            run: () =>
-              Ref.updateAndGet(calls, (count) => count + 1).pipe(
-                Effect.flatMap((count) =>
-                  count >= 3
-                    ? Deferred.succeed(reached, undefined).pipe(Effect.asVoid)
-                    : Effect.sync(() => {
-                        throw new Error(`stage exploded on frame ${String(count)}`)
-                      }),
-                ),
-              ),
+            run: () => Effect.gen(function* () {
+              const count = yield* Ref.updateAndGet(calls, (current) => current + 1)
+              if (count === 1) {
+                return
+              }
+              yield* Deferred.succeed(failed, undefined)
+              return yield* Effect.die(`stage exploded on frame ${String(count)}`)
+            }),
           },
         ]),
       }
 
       const handle = yield* launchPlayground({ modules: [exploding] }).pipe(Effect.provide(fakes.layer))
       yield* handle.submitFrame(MonotonicTimeSecs(1.02))
-      yield* handle.submitFrame(MonotonicTimeSecs(1.04))
-      yield* Deferred.await(reached)
+      yield* Deferred.await(failed)
+      yield* Effect.yieldNow()
+      yield* Effect.yieldNow()
 
-      expect(yield* handle.isRunning).toBe(true)
-      expect(yield* Ref.get(calls)).toBe(3)
+      expect(yield* handle.isRunning).toBe(false)
+      expect(yield* Ref.get(calls)).toBe(2)
+
+      yield* handle.submitFrame(MonotonicTimeSecs(1.04))
+      yield* Effect.yieldNow()
+      expect(yield* Ref.get(calls)).toBe(2)
 
       yield* handle.stop
     }).pipe(Effect.provide(PlaygroundLayer)),

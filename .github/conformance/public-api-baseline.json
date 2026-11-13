@@ -36,7 +36,7 @@
     "text": "Effect.runFork(loop.submitFrame(MonotonicTimeSecs(timestamp / 1_000)))"
   },
   {
-    "count": 2,
+    "count": 1,
     "file": "src/application/browser-preview.ts",
     "ruleId": "no-effect-run-outside-entrypoints",
     "text": "Effect.runFork(mutex.withPermits(1)(stopUnlocked))"

@@ -193,7 +193,7 @@ export const makeBrowserPreview = (
             Effect.matchCauseEffect(frame(deltaSeconds), {
               onFailure: (cause) => Effect.gen(function* () {
                 yield* Effect.logError(`Browser preview frame failed: ${Cause.pretty(cause)}`)
-                yield* Effect.sync(() => { Effect.runFork(mutex.withPermits(1)(stopUnlocked)) })
+                yield* Effect.forkDaemon(mutex.withPermits(1)(stopUnlocked))
               }),
               onSuccess: () => Effect.void,
             }),

@@ -295,11 +295,8 @@ const budgetProbe = (): ReadonlyArray<string> => {
   ] as const
 
   const nonFiniteRows = nonFinite.map(([label, from, to]) => {
-    try {
-      return `   ${cell(label, 34)}${String(elapsedMillis(from, to))}`
-    } catch {
-      return `   ${cell(label, 34)}THREW (elapsedMillis failed)`
-    }
+    const result = elapsedMillis(from, to)
+    return `   ${cell(label, 34)}${result._tag === 'Valid' ? String(result.value) : `Invalid: ${result.error[0]?.message}`}`
   })
 
   return [
@@ -323,13 +320,11 @@ const budgetProbe = (): ReadonlyArray<string> => {
     '   A missing phase is not "0 ms"; it is a boot that did not do something, and the verdict says',
     '   so separately from the arithmetic. That is the distinction a single number would lose.',
     '',
-    ...section('ELAPSED-MILLIS', 'elapsedMillis clamps a backwards interval. What about a broken one?'),
+    ...section('ELAPSED-MILLIS', 'elapsedMillis rejects backwards and broken clock readings.'),
     ...nonFiniteRows,
     '',
-    '   elapsedMillis is TOTAL: every pair of `number`s maps to a DurationMillis, and no row above',
-    '   can throw. The public DurationMillis constructor returns a typed Invalid result for a',
-    '   negative or non-finite input; elapsedMillis keeps its documented zero clamp for broken',
-    '   clock readings so a phase can still be recorded without inventing elapsed work.',
+    '   elapsedMillis returns a typed Valid | Invalid result. A negative or non-finite interval',
+    '   is rejected, and boot carries that failure through the Effect error channel.',
     '',
     '   How reachable that was depends on the clock. `MonotonicTimeSecs` is itself refined, so a',
     '   well-formed ClockPort cannot produce Infinity — but `elapsedMillis` does not take',
@@ -337,11 +332,7 @@ const budgetProbe = (): ReadonlyArray<string> => {
     '   ClockPort tag at run time while its fields read `undefined`. `undefined - undefined`',
     '   is NaN — the third row above.',
     '',
-    '   Zero rather than an invented large duration, because a fabricated number would make',
-    '   classifyBootTimings name a specific phase as overrunning by a specific amount and send',
-    '   somebody to optimise work that was never measured. Zero says only what the backwards clamp',
-    '   already says. Pinned by test/boot-phase.test.ts `REGRESSION: a non-finite reading is a',
-    '   zero, not a defect that kills the launch`.',
+    '   This avoids treating a broken clock as a successful zero-millisecond phase.',
   ]
 }
 
