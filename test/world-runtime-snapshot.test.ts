@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@effect/vitest'
-import { blockIdOf, blockPosition } from '@nerima-games/mc-kernel'
+import { blockIdOf, blockPosition, chunkCoord as kernelChunkCoord } from '@nerima-games/mc-kernel'
 import {
   CHUNK_HEIGHT,
   chunkCoord,
@@ -39,7 +39,7 @@ describe('snapshotWorldRuntime', () => {
     const coordinateFailure: ChunkWorldDataFailure = {
       _tag: 'ChunkWorldDataFailure',
       cause: new RangeError('invalid chunk data'),
-      coordinates: { cx: 3, cz: -2 },
+      coordinates: kernelChunkCoord(3, -2),
     }
     const noCoordinatesFailure: ChunkWorldDataFailure = {
       _tag: 'ChunkWorldDataFailure',

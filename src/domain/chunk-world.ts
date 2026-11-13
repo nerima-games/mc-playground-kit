@@ -40,10 +40,7 @@ export type ChunkWorld = {
   readonly chunks: ReadonlyMap<ChunkKey, ChunkSnapshot>
 }
 
-type ChunkWorldDataCoordinates = {
-  readonly cx?: number
-  readonly cz?: number
-}
+type ChunkWorldDataCoordinates = Partial<ChunkCoord>
 
 type ChunkWorldDataFailure = {
   readonly _tag: 'ChunkWorldDataFailure'

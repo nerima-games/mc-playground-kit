@@ -37,11 +37,6 @@ const timing = (phase: BootPhase, durationMillis: number): PhaseTiming => ({
   durationMillis: durationValue(durationMillis),
 })
 
-const unvalidatedTiming = (phase: BootPhase, durationMillis: number) => ({
-  phase,
-  durationMillis,
-})
-
 const verdictOf = (timings: ReadonlyArray<PhaseTiming>) => {
   const result = classifyBootTimings(timings)
   assert(result._tag === 'Valid')
@@ -226,10 +221,12 @@ describe('classifyBootTimings', () => {
   it.effect('rejects each invalid duration before it can cancel another phase', () =>
     Effect.sync(() => {
       for (const invalid of [-1000, Number.NaN, Number.POSITIVE_INFINITY]) {
-        const result = classifyBootTimings([
-          unvalidatedTiming('world', 2000),
-          unvalidatedTiming('renderer', invalid),
-        ])
+        const timings: ReadonlyArray<{ readonly phase: BootPhase; readonly durationMillis: number }> = [
+          { phase: 'world', durationMillis: durationValue(2000) },
+          { phase: 'renderer', durationMillis: invalid },
+        ]
+        // @ts-expect-error Raw numbers are not branded DurationMillis values.
+        const result = classifyBootTimings(timings)
 
         expect(result._tag).toBe('Invalid')
       }

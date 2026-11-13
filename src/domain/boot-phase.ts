@@ -215,11 +215,6 @@ export type PhaseTiming = {
   readonly durationMillis: DurationMillis
 }
 
-type PhaseTimingInput = {
-  readonly phase: BootPhase
-  readonly durationMillis: number
-}
-
 export type PhaseOverrun = {
   readonly phase: BootPhase
   readonly durationMillis: DurationMillis
@@ -241,7 +236,7 @@ export type BootBudgetVerdict = {
 
 type BootBudgetResult = ValidationResult<BootBudgetVerdict>
 
-const measureTimings = (timings: ReadonlyArray<PhaseTimingInput>) => {
+const measureTimings = (timings: ReadonlyArray<PhaseTiming>) => {
   const measured = new Map<BootPhase, number>()
   for (const timing of timings) {
     const durationResult = DurationMillis(timing.durationMillis)
@@ -318,7 +313,7 @@ const classifyMeasuredPhases = (measured: ReadonlyMap<BootPhase, number>) => {
  * cost twice, and hiding a retry inside a first-wins rule would be the same
  * error as ignoring a missing phase, in the other direction.
  */
-export const classifyBootTimings = (timings: ReadonlyArray<PhaseTimingInput>): BootBudgetResult => {
+export const classifyBootTimings = (timings: ReadonlyArray<PhaseTiming>): BootBudgetResult => {
   const { measured, totalResult } = measureTimings(timings)
   if (totalResult._tag === 'Invalid') {
     return totalResult
